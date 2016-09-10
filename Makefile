@@ -15,7 +15,7 @@ clean:
 #test1: clean
 test1:
 	gcc ppmrw.c -o ppmrw
-	./ppmrw 2 int_test.txt out_test.txt
+	./ppmrw 3 int_test.txt out_test.txt
 
 run_it.%:
 	gcc $*.c -o $*

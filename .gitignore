@@ -50,3 +50,4 @@ Makefile~
 *.exe
 *.txt~
 out_test.txt
+*.stackdump
