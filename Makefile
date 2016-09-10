@@ -3,7 +3,8 @@
 # set path = ($path /cygdrive/c/cygwin64/bin)
 #############################################
 # all    - compile the project
-# run_it - compile AND run the project in a default testing configuration
+# test1  - clean, compile and run in simple test config
+# run_it - generic target to compile AND run
 
 all: ppmrw.c
 	gcc ppmrw.c -o ppmrw
@@ -11,6 +12,12 @@ all: ppmrw.c
 clean:
 	rm ppmrw.exe
 
+#test1: clean
+test1:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 2 int_test.txt out_test.txt
+
 run_it.%:
 	gcc $*.c -o $*
 	./$*
+

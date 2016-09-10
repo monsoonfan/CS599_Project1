@@ -48,3 +48,5 @@ Temporary Items
 Makefile~
 *.c~
 *.exe
+*.txt~
+out_test.txt
