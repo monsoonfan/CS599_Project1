@@ -83,10 +83,10 @@ typedef struct PPM_file_struct {
 
 // functions
 //void readPPM (PPM_file_struct *infile);
-int  readPPM      (char *infile,      PPM_file_struct *input                          );
-void convertFormat (int   format,      PPM_file_struct *input, PPM_file_struct *output);
-void writeFile     (char *outfile,     PPM_file_struct *input                         );
-void message       (char message_code[],char message[]          );
+int  readPPM       (char *infile,      PPM_file_struct *input                          );
+void convertFormat (int   format,      PPM_file_struct *input, PPM_file_struct *output );
+void writePPM      (char *outfile,     PPM_file_struct *input                          );
+void message       (char message_code[],char message[]                                 );
 //void message (char channel[], char message_code[], char message[]);
 void reportPPMStruct (PPM_file_struct *input);
 void help ();
@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
   convertFormat(output_magic_number,&input_file_data,&output_file_data);
 
   // Write the contents of the new file in desired format, remember to use pointer arithmetic to traverse
-  writeFile(outfile,&output_file_data);
+  writePPM(outfile,&output_file_data);
 
   // Verify correct output
 
@@ -341,15 +341,59 @@ int readPPM (char *infile, PPM_file_struct *input) {
 // convert from input format to output format
 void convertFormat (int format, PPM_file_struct *input, PPM_file_struct *output) {
   //  switch(format):
-  printf("Converting to format %d\n",format);
+  printf("Converting to format %d ...\n",format);
+  output->magic_number = format;
+  output->width        = input->width;
+  output->height       = input->height;
+  output->alpha        = input->alpha;
+  message("Info","Done with conversion");
 }
 
 // write the output file in the new format
-void writeFile (char *outfile, PPM_file_struct *input) {
+void writePPM (char *outfile, PPM_file_struct *output) {
   printf("Writing file %s...\n",outfile);
   FILE* fh_out = fopen(outfile,"wb");
+
+  // -------------------------- write header ---------------------------------
+  fprintf(fh_out,"P%d\n",output->magic_number);
+  fprintf(fh_out,"# PPM file format %d\n",output->magic_number);
+  fprintf(fh_out,"# written by ppmrw(rmr5)\n");
+  fprintf(fh_out,"%d %d\n",output->width,output->height);
+  fprintf(fh_out,"%d\n",   output->alpha);
+  // ---------------------- done write header --------------------------------
+
+  // -------------------------- write image ----------------------------------
+  int pixel_index = 0;
+  int modulo;
+  switch(output->magic_number) {
+  case(3):
+    message("Info","Outputting format 3");
+    // TODO: more cleanup for ascii<>int mess
+    while(pixel_index < (output->width - 48) * (output->height - 48)) {      
+      fprintf(fh_out,"%d %d %d",pixel_map[pixel_index].r,pixel_map[pixel_index].g,pixel_map[pixel_index].b);
+      modulo = (pixel_index + 1) % (output->width - 48);
+      printf("DBG wPPM modulo: %d, pi: %d\n",modulo, pixel_index);
+      if ( modulo == 0 ) {
+	fprintf(fh_out,"\n");
+      } else {
+	fprintf(fh_out," ");
+      }
+      pixel_index++;
+    }
+    break;
+  case(6):
+    message("Info","Outputting format 6");
+    break;
+  case(7):
+    message("Info","Outputting format 7");
+    break;
+  default:
+    message("Error","Unrecognized output format");
+  }
+  // ---------------------- done write image ---------------------------------
+
   fclose(fh_out);
-  message("Info","Done");
+  message("Info","Done ");
 }
 
 // helper function to visualize what's in a given PPM struct

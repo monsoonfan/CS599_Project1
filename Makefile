@@ -19,7 +19,7 @@ test1:
 
 test2:
 	gcc ppmrw.c -o ppmrw
-	./ppmrw 6 p3test.ppm p6out_test.ppm
+	./ppmrw 3 p3test.ppm p6out_test.ppm
 
 test3:
 	gcc ppmrw.c -o ppmrw
