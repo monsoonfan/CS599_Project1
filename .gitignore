@@ -51,3 +51,6 @@ Makefile~
 *.txt~
 out_test.txt
 *.stackdump
+p6out_test.ppm
+testio.c
+ppmrw_readv1.c
