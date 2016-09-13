@@ -43,6 +43,15 @@ Functions:
 Questions:
 1) best way to structure data such as pass-by-reference in C? Seems C is pass-by-value only
    Is this passing the address or a copy of the data?
+
+2) Can't get atoi to work:
+   warning: passing argument 1 of ‘atoi’ makes pointer from integer without a cast [-Wint-conversion]
+   int total_pixels = atoi(input->width) * atoi(input->height) * 3;
+
+   also, can't cast these back to int, always get the ascii decimal
+
+3) conversion of '255' which is 3 ascii chars to a single r/g/b value?
+
 ---------------------------------------------------------------------------------------
 */
 
@@ -51,6 +60,8 @@ Questions:
 #include <stdlib.h>
 
 // global variables
+int verbose = 1; // controls logfile message level
+
 typedef struct Pixel {
   unsigned char r;
   unsigned char g;
@@ -58,13 +69,15 @@ typedef struct Pixel {
   unsigned char a;
 } Pixel ;
 
+Pixel *pixel_map;
+
 typedef struct PPM_file_struct {
   char magic_number;
   int lines;
   int width;
   int height;
   int alpha;
-  Pixel *pixel_map; // this is a problem, would need to dynamically malloc this thing to be efficient
+  //Pixel *pixel_map; // this is a problem, would need to dynamically malloc this thing to be efficient
   FILE* fh_in;
 } PPM_file_struct ;
 
@@ -265,22 +278,39 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // continue until EOF
   // fgets(buffer,BUFFSIZE,exif); <-- could be useful, although with varying sizes of info don't see how
   message("Info","Process image information...");
-  input->pixel_map = malloc(sizeof(Pixel) * input->width * input->height);
+  pixel_map = malloc(sizeof(Pixel) * input->width * input->height);
   char *temp_data = malloc(sizeof(char) * 3); //255 will be highest value
   int chunk_count = 0;
-  switch((int)input->magic_number) {
+  int rgb_index = 0;
+  //  int total_pixels = atoi(input->width) * atoi(input->height) * 3;
+  // TODO: hack for inability to cast to int
+  int total_pixels = (input->width -48) * (input->height -48) * 3;
+
+  // This switch handles parsing the various input file formats for the image data
+  switch(input->magic_number) {
   case('3'):
     message("Info","  format version: 3");
-    while(prev_char != EOF) {
+    while(prev_char != EOF && chunk_count < total_pixels) {
+      rgb_index = chunk_count % 3;
       prev_char = advanceToChunk(prev_char,input);
       prev_char = getChunk(prev_char,temp_data,input);
-      // convert chunk
-      //      input.pixel_map.r = temp3[0];
-      //      printf("  stored %c\n",input.pixel_map.r);
-      // store chunk
+      // TODO: convert chunk to proper format
+      switch(rgb_index) {
+      case(0):
+	pixel_map[chunk_count].r = temp_data[0];
+	if(verbose) {printf("  stored %c to pixel_map red\n",pixel_map[chunk_count].r);}
+	break;
+      case(1):
+	pixel_map[chunk_count].g = temp_data[0];
+	if(verbose) {printf("  stored %c to pixel_map green\n",pixel_map[chunk_count].g);}
+	break;
+      case(2):
+	pixel_map[chunk_count].b = temp_data[0];
+	if(verbose) {printf("  stored %c to pixel_map blue\n",pixel_map[chunk_count].b);}
+	break;
+      }
       chunk_count++;
     }
-    chunk_count--; // last chunk is ignored, it's EOF
     printf("read %d chunks\n",chunk_count);
     message("Info","Done reading PPM 3");
     break;
@@ -353,7 +383,6 @@ char getChunk (char current, char *chunk, PPM_file_struct *input) {
 
 char advanceToChunk (char current, PPM_file_struct *input) {
   while(current == ' ' || current == '\n') {
-    printf("DBG aTC: skipping (%c)\n",current);
     current = fgetc(input->fh_in);
   }
   return current;
