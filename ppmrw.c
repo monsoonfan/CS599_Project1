@@ -49,7 +49,7 @@ Questions:
 #include <stdlib.h>
 
 // global variables
-int VERBOSE = 1; // controls logfile message level
+int VERBOSE = 0; // controls logfile message level
 int CURRENT_CHAR = 'a';
 int PREV_CHAR = '\n';
 
@@ -143,7 +143,11 @@ int main(int argc, char *argv[]) {
   //void message (char channel[], char message_code[], char message[]) {
 */
 void message (char message_code[], char message[]) {
-  printf("%s: %s\n",message_code,message);
+  if(message_code == "Error") {
+    fprintf(stderr,"%s: %s\n",message_code,message);
+  } else {
+    printf("%s: %s\n",message_code,message);
+  }
   //fprintf(stdout,"%s: %s\n",message_code,message);
   //  fprintf(channel,"%s: %s\n",message_code,message);
 }
@@ -215,7 +219,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
   } // Done with first line
   
 
-  // Now traverse any comment lines in one loop
+  // Now traverse any comment lines in one loop, and also account for P7
   CURRENT_CHAR = fgetc(input->fh_in);
   int done_with_comments = 0;
   while(CURRENT_CHAR != EOF) {
@@ -301,10 +305,31 @@ int readPPM (char *infile, PPM_file_struct *input) {
     pixel_map[chunk_count+1].a = 0;
     */
     message("Info","Done reading PPM 3");
-    reportPixelMap(pixel_map);
+    //reportPixelMap(pixel_map);
     break;
   case(6):
     message("Info","  format version: 6");
+    while(chunk_count < total_pixels) {
+      int value[4];
+      rgb_index = chunk_count % 3;
+      fread(value,sizeof(Pixel),1,input->fh_in);
+      switch(rgb_index) {
+      case(0):
+	pixel_map[pm_index].r = (char)value;
+	if(VERBOSE) {printf("  stored %d to pixel_map red\n",pixel_map[pm_index].r);}
+	break;
+      case(1):
+	pixel_map[pm_index].g = value;
+	if(VERBOSE) {printf("  stored %d to pixel_map green\n",pixel_map[pm_index].g);}
+	break;
+      case(2):
+	pixel_map[pm_index].b = value;
+	if(VERBOSE) {printf("  stored %d to pixel_map blue\n",pixel_map[pm_index].b);}
+	pm_index++;
+	break;
+      }
+      chunk_count++;
+    }
     break;
   case(7):
     message("Info","  format version: 7");
@@ -347,13 +372,12 @@ void writePPM (char *outfile, PPM_file_struct *output) {
   int pixel_index = 0;
   int modulo;
   switch(output->magic_number) {
+  // this case is the P3 format
   case(3):
     message("Info","Outputting format 3");
     while(pixel_index < (output->width) * (output->height)) {      
-      //      fprintf(fh_out,"%d %d %d",pixel_map[pixel_index].r,pixel_map[pixel_index].g,pixel_map[pixel_index].b);
       fprintf(fh_out,"%3d %3d %3d",pixel_map[pixel_index].r,pixel_map[pixel_index].g,pixel_map[pixel_index].b);
       modulo = (pixel_index + 1) % (output->width);
-      //      printf("DBG wPPM modulo: %d, pi: %d\n",modulo, pixel_index);
       if ( modulo == 0 ) {
 	fprintf(fh_out,"\n");
       } else {
@@ -362,9 +386,13 @@ void writePPM (char *outfile, PPM_file_struct *output) {
       pixel_index++;
     }
     break;
+  // this case is the P6 format
   case(6):
     message("Info","Outputting format 6");
+    // TODO: this is writing but the image is broken somehow, need to fix
+    fwrite(pixel_map, sizeof(Pixel), output->width * output->height, fh_out);
     break;
+  // this case is the P7 format
   case(7):
     message("Info","Outputting format 7");
     break;

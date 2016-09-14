@@ -56,3 +56,4 @@ testio.c
 ppmrw_readv1.c
 scribble.xcf
 *.ppm~
+pixmap.c
