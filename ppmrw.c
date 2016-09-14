@@ -48,6 +48,8 @@ ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpoint
 
 3) how to deal with tokens: (array of whatever fgetc returns)
 
+* remember to use pointer arithmetic to traverse
+
 ---------------------------------------------------------------------------------------
 */
 
@@ -55,19 +57,13 @@ ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpoint
 #include <stdio.h>
 #include <stdlib.h>
 
-// global variables
-int VERBOSE = 0; // controls logfile message level
-int CURRENT_CHAR = 'a';
-int PREV_CHAR = '\n';
-
+// typdefs
 typedef struct Pixel {
   unsigned char r;
   unsigned char g;
   unsigned char b;
   unsigned char a;
 } Pixel ;
-
-Pixel *PIXEL_MAP;
 
 typedef struct PPM_file_struct {
   char magic_number;
@@ -81,21 +77,38 @@ typedef struct PPM_file_struct {
   FILE* fh_in;
 } PPM_file_struct ;
 
+// global variables
+int CURRENT_CHAR        = 'a';
+int PREV_CHAR           = '\n';
+int OUTPUT_MAGIC_NUMBER = 0;
+int VERBOSE             = 0; // controls logfile message level
+
+// global data structures
+PPM_file_struct INPUT_FILE_DATA;
+Pixel *PIXEL_MAP;
+PPM_file_struct OUTPUT_FILE_DATA;
+
+
 // functions
-int  readPPM         (char *infile,      PPM_file_struct *input                          );
-void convertFormat   (int   format,      PPM_file_struct *input, PPM_file_struct *output );
-void writePPM        (char *outfile,     PPM_file_struct *input                          );
-void message         (char message_code[],char message[]                                 );
+int  readPPM         (char *infile,          PPM_file_struct *input                          );
+void writePPM        (char *outfile,         PPM_file_struct *input                          );
+void message         (char message_code[],   char message[]                                  );
+
 void reportPPMStruct (PPM_file_struct *input);
-void reportPixelMap  (Pixel *pm);
-void help            ();
+void reportPixelMap  (Pixel *pm             );
 int  getNumber       (PPM_file_struct *input);
 char getWord         (PPM_file_struct *input);
 void skipWhitespace  (PPM_file_struct *input);
 void skipLine        (PPM_file_struct *input);
+void help            ();
+void convertFormatAndWritePPMHeader  (FILE* fh              );
+int computeDepth();
+char computeTuplType();
 
 /*
-  MAIN
+ ------------------------------------------------------------------
+                                 MAIN
+ ------------------------------------------------------------------
 */
 int main(int argc, char *argv[]) {
   
@@ -107,33 +120,31 @@ int main(int argc, char *argv[]) {
   }
   
   // Get parameters from arguments
-  int output_magic_number = atoi(argv[1]);
+  OUTPUT_MAGIC_NUMBER = atoi(argv[1]);
   char *infile = argv[2];
   char *outfile = argv[3];
-  printf("Converting file to file format %d ...\n",output_magic_number);
+  printf("Converting file to format %d ...\n",OUTPUT_MAGIC_NUMBER);
   printf("    Input : %s\n",infile);
   printf("    Output: %s\n",outfile);
   
   // Open the input file and traverse it, storing the image to buffer
-  PPM_file_struct input_file_data;
-  readPPM(infile,&input_file_data);
+  readPPM(infile,&INPUT_FILE_DATA);
   
-  // TMP DBG: report the struct
-  reportPPMStruct(&input_file_data);
-  
-  // Make the conversion
-  // TODO: ditch this proc, do the conversion during writePPM only
-  PPM_file_struct output_file_data;
-  convertFormat(output_magic_number,&input_file_data,&output_file_data);
-
-  // Write the contents of the new file in desired format, remember to use pointer arithmetic to traverse
-  writePPM(outfile,&output_file_data);
+  // Write the contents of the new file in desired format
+  writePPM(outfile,&INPUT_FILE_DATA);
 
   // Verify correct output
 
   // Successful exit was reached
   return EXIT_SUCCESS;
 }
+/*
+ ------------------------------------------------------------------
+                               END MAIN
+ ------------------------------------------------------------------
+*/
+
+
 
 
 /*
@@ -254,7 +265,6 @@ int readPPM (char *infile, PPM_file_struct *input) {
       input->alpha = getNumber(input);
       
       message("Info","Completed processing header information.");
-      reportPPMStruct(input);
       
       break;
     }
@@ -273,18 +283,16 @@ int readPPM (char *infile, PPM_file_struct *input) {
       //    char *token_name;
       char token_name[32];
       *token_name = getWord(input); // this is a hack, only getting first char of token but sould work
-      printf("DBG tn[0]: (%c)\n",*token_name);
+      //      printf("DBG tn[0]: (%c)\n",*token_name);
       // TODO: clean this up, was what I was trying when trying to match the whole token
       /*
 	for (int i = 0; i < 32; i++) {printf("tn[%d]:%c\n",i,*(token_name+1));}
 	printf("DBG tn[0]: (%c)\n",*token_name);
       */
       if (*token_name == '#') {
-	printf("DBG: Skipping comment line in header\n");
 	skipLine(input);
       } else {
 	skipWhitespace(input); // position at the first char of the token, switch will grab token and advance line
-	printf("DBG got token_name %c, getting token...\n",*token_name);
       }
       
       switch(*token_name) {
@@ -293,7 +301,6 @@ int readPPM (char *infile, PPM_file_struct *input) {
 	message("Info","Processing WIDTH token");
 	input->width = getNumber(input);
 	skipWhitespace(input);
-	printf("DBG: got %d\n",input->width);
 	got_width = 1;
 	break;
       case('H'):
@@ -321,11 +328,12 @@ int readPPM (char *infile, PPM_file_struct *input) {
 	if(got_tupltype) {message("Error","More than one TUPLTYPE token!");}
 	message("Info","Processing TUPLTYPE token");
 	input->tupltype = getWord(input);
+	if(input->tupltype != 'R') {message("Error","Unsupported TUPLTYPE!");}
 	got_tupltype = 1;
 	break;
       case('E'):
 	if(got_endhdr) {message("Error","Could not recognize P7 header!");}
-	skipLine(input);
+	message("Info","DBG ENDHDR line reached");
 	got_endhdr = 1;
 	break;
       default:
@@ -340,10 +348,12 @@ int readPPM (char *infile, PPM_file_struct *input) {
     }
     if (got_width && got_height && got_depth && got_maxval && got_tupltype) {
       message("Info","Done processing header");
+      printf("Info: there were %d comment lines\n",comment_lines);
     } else {
       message("Error","Missing token(s), invalid header!");
     }
   }
+  
   // ------------------------------- END HEADER ----------------------------
 
   // ------------------------------- BEGIN IMAGE ----------------------------
@@ -418,9 +428,32 @@ int readPPM (char *infile, PPM_file_struct *input) {
       }
       number_count++;
     }
+    printf("Info: read %d bytes\n",number_count);
     break;
   case(7):
     message("Info","  format version: 7");
+    while(number_count < total_pixels) {
+      int value[4];
+      rgb_index = number_count % 3;
+      fread(value,sizeof(Pixel),1,input->fh_in);
+      switch(rgb_index) {
+      case(0):
+	PIXEL_MAP[pm_index].r = (char)value;
+	if(VERBOSE) {printf("  stored %d to PIXEL_MAP red\n",PIXEL_MAP[pm_index].r);}
+	break;
+      case(1):
+	PIXEL_MAP[pm_index].g = value;
+	if(VERBOSE) {printf("  stored %d to PIXEL_MAP green\n",PIXEL_MAP[pm_index].g);}
+	break;
+      case(2):
+	PIXEL_MAP[pm_index].b = value;
+	if(VERBOSE) {printf("  stored %d to PIXEL_MAP blue\n",PIXEL_MAP[pm_index].b);}
+	pm_index++;
+	break;
+      }
+      number_count++;
+    }
+    printf("Info: read %d bytes\n",number_count);
     break;
   }
   
@@ -429,43 +462,81 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // finishing
   fclose(input->fh_in);
   message("Info","Done");
+  reportPPMStruct(input);
   return input->magic_number;
 }
 
-// convert from input format to output format
-void convertFormat (int format, PPM_file_struct *input, PPM_file_struct *output) {
-  //  switch(format):
-  printf("Converting to format %d ...\n",format);
-  output->magic_number = format;
-  output->width        = input->width;
-  output->height       = input->height;
-  output->alpha        = input->alpha;
+int computeDepth() {
+  if (INPUT_FILE_DATA.magic_number != 7) {
+    // TODO: need correct logic here
+    return 1; 
+  } else {
+    return INPUT_FILE_DATA.depth;
+  }
+}
+char computeTuplType() {
+    // TODO: need correct logic here
+  if (INPUT_FILE_DATA.tupltype != "RBG_ALPHA") {
+    // TODO: need correct logic here
+    return "RGB"; 
+  } else {
+    return "RGB_ALPHA"; 
+  }
+}
+
+// convert from input format to output format and write the header
+void convertFormatAndWritePPMHeader (FILE* fh) {
+  int magic_number = OUTPUT_MAGIC_NUMBER;
+
+  // These values/header elements are the same regardless format
+  printf("Converting to format %d ...\n",magic_number);
+  fprintf(fh,"P%d\n",magic_number);
+  fprintf(fh,"# PPM file format %d\n",magic_number);
+  fprintf(fh,"# written by ppmrw(rmr5)\n");
+  OUTPUT_FILE_DATA.magic_number = magic_number;
+  OUTPUT_FILE_DATA.width        = INPUT_FILE_DATA.width;
+  OUTPUT_FILE_DATA.height       = INPUT_FILE_DATA.height;
+  OUTPUT_FILE_DATA.alpha        = INPUT_FILE_DATA.alpha;
+  
+  if (magic_number == 3 || magic_number == 6) {
+    fprintf(fh,"%d %d\n",       OUTPUT_FILE_DATA.width,OUTPUT_FILE_DATA.height);
+    fprintf(fh,"%d\n",          OUTPUT_FILE_DATA.alpha);
+  } else if (magic_number == 7) {
+    OUTPUT_FILE_DATA.depth      = computeDepth();
+    //    OUTPUT_FILE_DATA.tupltype   = computeTuplType();
+    OUTPUT_FILE_DATA.tupltype   = "RBG";
+    
+    fprintf(fh,"WIDTH %d\n",    OUTPUT_FILE_DATA.width);
+    fprintf(fh,"HEIGHT %d\n",   OUTPUT_FILE_DATA.height);
+    fprintf(fh,"DEPTH %d\n",    OUTPUT_FILE_DATA.depth);
+    fprintf(fh,"MAXVAL %d\n",   OUTPUT_FILE_DATA.alpha);
+    fprintf(fh,"TUPLTYPE %d\n", OUTPUT_FILE_DATA.tupltype);
+    fprintf(fh,"ENDHDR\n");
+  } else {
+    message("Error","Trying to output unsupported format!\n");
+  }
   message("Info","Done with conversion");
 }
 
 // write the output file in the new format
-void writePPM (char *outfile, PPM_file_struct *output) {
+void writePPM (char *outfile, PPM_file_struct *input) {
   printf("Writing file %s...\n",outfile);
   FILE* fh_out = fopen(outfile,"wb");
 
   // -------------------------- write header ---------------------------------
-  fprintf(fh_out,"P%d\n",output->magic_number);
-  fprintf(fh_out,"# PPM file format %d\n",output->magic_number);
-  fprintf(fh_out,"# written by ppmrw(rmr5)\n");
-  fprintf(fh_out,"%d %d\n",output->width,output->height);
-  fprintf(fh_out,"%d\n",   output->alpha);
+  convertFormatAndWritePPMHeader(fh_out);
   // ---------------------- done write header --------------------------------
 
   // -------------------------- write image ----------------------------------
   int pixel_index = 0;
   int modulo;
-  switch(output->magic_number) {
-  // this case is the P3 format
+  switch(OUTPUT_FILE_DATA.magic_number) {
+  // P3 format
   case(3):
     message("Info","Outputting format 3");
-    while(pixel_index < (output->width) * (output->height)) {      
+    while(pixel_index < (OUTPUT_FILE_DATA.width) * (OUTPUT_FILE_DATA.height)) {      
       fprintf(fh_out,"%3d %3d %3d",PIXEL_MAP[pixel_index].r,PIXEL_MAP[pixel_index].g,PIXEL_MAP[pixel_index].b);
-      modulo = (pixel_index + 1) % (output->width);
+      modulo = (pixel_index + 1) % (OUTPUT_FILE_DATA.width);
       if ( modulo == 0 ) {
 	fprintf(fh_out,"\n");
       } else {
@@ -474,15 +545,17 @@ void writePPM (char *outfile, PPM_file_struct *output) {
       pixel_index++;
     }
     break;
-  // this case is the P6 format
+  // P6 format
   case(6):
     message("Info","Outputting format 6");
     // TODO: this is writing but the image is broken somehow, need to fix
-    fwrite(PIXEL_MAP, sizeof(Pixel), output->width * output->height, fh_out);
+    fwrite(PIXEL_MAP, sizeof(Pixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
-  // this case is the P7 format
+  // P7 format
   case(7):
     message("Info","Outputting format 7");
+    // TODO: this is writing but the image is broken somehow, need to fix
+    fwrite(PIXEL_MAP, sizeof(Pixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
   default:
     message("Error","Unrecognized output format");
@@ -490,6 +563,7 @@ void writePPM (char *outfile, PPM_file_struct *output) {
   // ---------------------- done write image ---------------------------------
 
   fclose(fh_out);
+  reportPPMStruct(&OUTPUT_FILE_DATA);
   message("Info","Done ");
 }
 
@@ -529,7 +603,7 @@ int getNumber (PPM_file_struct *input) {
   tmp[tc_index] = CURRENT_CHAR;
   
   do {
-    printf("DBG_gN: CURRENT_CHAR (%d)%c\n",tc_index,CURRENT_CHAR);
+    //printf("DBG_gN: CURRENT_CHAR (%d)%c\n",tc_index,CURRENT_CHAR);
     CURRENT_CHAR = fgetc(input->fh_in);
     tmp[++tc_index] = CURRENT_CHAR;
     // fail safe
@@ -558,7 +632,7 @@ char getWord (PPM_file_struct *input) {
   tmp[index] = CURRENT_CHAR;
   
   do {
-    printf("DBG_gW: CURRENT_CHAR (%d)%c\n",index,CURRENT_CHAR);
+    //printf("DBG_gW: CURRENT_CHAR (%d)%c\n",index,CURRENT_CHAR);
     CURRENT_CHAR = fgetc(input->fh_in);
     tmp[++index] = CURRENT_CHAR;
     if(index > max_chars) {
@@ -570,7 +644,7 @@ char getWord (PPM_file_struct *input) {
   // finish up and return converted value
   tmp[++index] = 0; // NULL terminator
   PREV_CHAR = CURRENT_CHAR;
-  printf("returning %d\n",*tmp);
+  //printf("DBG: returning %d\n",*tmp);
   return *tmp;
 
 }
@@ -583,7 +657,7 @@ void skipWhitespace (PPM_file_struct *input) {
 }
 
 void skipLine (PPM_file_struct *input) {
-  printf("DBG skipline\n");
+  //printf("DBG skipline\n");
   while(CURRENT_CHAR != '\n') {
     //printf("   skipping %c\n",CURRENT_CHAR);
     CURRENT_CHAR = fgetc(input->fh_in);

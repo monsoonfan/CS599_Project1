@@ -49,6 +49,20 @@ test7to7:
 	gcc ppmrw.c -o ppmrw
 	./ppmrw 7 p7test.ppm p7out_test.ppm
 
+make test_all:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 3 p3test.ppm p3out3_test.ppm
+	./ppmrw 6 p3test.ppm p6out3_test.ppm
+	./ppmrw 7 p3test.ppm p7out3_test.ppm
+
+	./ppmrw 3 p6test.ppm p3out6_test.ppm
+	./ppmrw 6 p6test.ppm p6out6_test.ppm
+	./ppmrw 7 p6test.ppm p7out6_test.ppm
+
+	./ppmrw 3 p7test.ppm p3out7_test.ppm
+	./ppmrw 6 p7test.ppm p6out7_test.ppm
+	./ppmrw 7 p7test.ppm p7out7_test.ppm
+
 
 run_it.%:
 	gcc $*.c -o $*
