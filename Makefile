@@ -12,18 +12,43 @@ all: ppmrw.c
 clean:
 	rm ppmrw.exe
 
-#test1: clean
-test1:
+# targets for testing each of the simple test configs
+test3to3:
 	gcc ppmrw.c -o ppmrw
-	./ppmrw 3 int_test.txt out_test.txt
+	./ppmrw 3 p3test.ppm p3out_test.ppm
 
-test2:
+test3to6:
 	gcc ppmrw.c -o ppmrw
-	./ppmrw 3 p3test.ppm p6out_test.ppm
+	./ppmrw 6 p3test.ppm p6out_test.ppm
 
-test3:
+test3to7:
 	gcc ppmrw.c -o ppmrw
-	./ppmrw 6 p3test2.ppm p6out_test.ppm
+	./ppmrw 7 p3test.ppm p7out_test.ppm
+
+test6to3:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 3 p6test.ppm p3out_test.ppm
+
+test6to6:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 6 p6test.ppm p6out_test.ppm
+
+test6to7:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 7 p6test.ppm p7out_test.ppm
+
+test7to3:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 3 p7test.ppm p3out_test.ppm
+
+test7to6:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 6 p7test.ppm p6out_test.ppm
+
+test7to7:
+	gcc ppmrw.c -o ppmrw
+	./ppmrw 7 p7test.ppm p7out_test.ppm
+
 
 run_it.%:
 	gcc $*.c -o $*

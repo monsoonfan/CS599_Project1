@@ -41,17 +41,6 @@ Functions:
   help         - print help message, usage, etc...
 
 Questions:
-1) best way to structure data such as pass-by-reference in C? Seems C is pass-by-value only
-   Is this passing the address or a copy of the data?
-
-2) Can't get atoi to work:
-   warning: passing argument 1 of ‘atoi’ makes pointer from integer without a cast [-Wint-conversion]
-   int total_pixels = atoi(input->width) * atoi(input->height) * 3;
-
-   also, can't cast these back to int, always get the ascii decimal
-
-3) conversion of '255' which is 3 ascii chars to a single r/g/b value?
-
 ---------------------------------------------------------------------------------------
 */
 
@@ -60,7 +49,9 @@ Questions:
 #include <stdlib.h>
 
 // global variables
-int verbose = 1; // controls logfile message level
+int VERBOSE = 1; // controls logfile message level
+int CURRENT_CHAR = 'a';
+int PREV_CHAR = '\n';
 
 typedef struct Pixel {
   unsigned char r;
@@ -89,22 +80,23 @@ void writePPM      (char *outfile,     PPM_file_struct *input                   
 void message       (char message_code[],char message[]                                 );
 //void message (char channel[], char message_code[], char message[]);
 void reportPPMStruct (PPM_file_struct *input);
+void reportPixelMap (Pixel *pm);
 void help ();
-char getChunk (char current, char *chunk, PPM_file_struct *input);
-char advanceToChunk (char current, PPM_file_struct *input);
+int getChunk (PPM_file_struct *input);
+void advanceToChunk (PPM_file_struct *input);
 
 /*
   MAIN
 */
 int main(int argc, char *argv[]) {
-
+  
   // Argument checking done in main, as it's specific to this project
   // format: ppmrw 3 input.ppm output.ppm
   if (argc != 4) {
     help();
     return(1);
   }
-
+  
   // Get parameters from arguments
   int output_magic_number = atoi(argv[1]);
   char *infile = argv[2];
@@ -112,15 +104,16 @@ int main(int argc, char *argv[]) {
   printf("Converting file to file format %d ...\n",output_magic_number);
   printf("    Input : %s\n",infile);
   printf("    Output: %s\n",outfile);
-
-  // Open the input file and traverse it, check its format and store height/width only
+  
+  // Open the input file and traverse it, storing the image to buffer
   PPM_file_struct input_file_data;
-  if (!readPPM(infile,&input_file_data)) {return 0;}
-
+  readPPM(infile,&input_file_data);
+  
   // TMP DBG: report the struct
   reportPPMStruct(&input_file_data);
-
+  
   // Make the conversion
+  // TODO: ditch this proc, do the conversion during writePPM only
   PPM_file_struct output_file_data;
   convertFormat(output_magic_number,&input_file_data,&output_file_data);
 
@@ -182,6 +175,19 @@ void help () {
      in order from left to right. Each pixel is a triplet of red, green, and blue samples, in that order. 
      Each sample is represented in pure binary by either 1 or 2 bytes. If the Maxval is less than 256, it
      is 1 byte. Otherwise, it is 2 bytes. The most significant byte is first.
+
+suggested to get bytes at a time, ??
+3 = fscanf
+6 = fread
+6 = fwrite
+
+P7 = header is more free-form and has an end-of-header directive
+custom tuple types, but we just need to be able to do RGB and RBGA, anything else, just 
+return Error unsupported type
+we can assume just one byte for this project, but throw an error if it's more than one
+but you better check for anything that could go wrong, each line of code, throw an error to stderr
+
+fread error checking (don't exceed max val and don't hit EOF)
   ----------------
 */
 int readPPM (char *infile, PPM_file_struct *input) {
@@ -189,10 +195,10 @@ int readPPM (char *infile, PPM_file_struct *input) {
   printf("Scanning %s for info ...\n",infile);
   input->fh_in = fopen(infile,"r");
 
-  // variables for this func
-  int first_char = getc(input->fh_in);
-  int current_char = 'a';
-  int prev_char = '\n';
+  // variables for this func with some initial settings
+  int first_char = fgetc(input->fh_in);
+  //  CURRENT_CHAR = first_char;
+    CURRENT_CHAR = fgetc(input->fh_in);
   int linecount = 0;
   int charcount = 0;
   
@@ -200,71 +206,49 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // First char should always be a P (else exit), if so next char is number and advance from there
   if (first_char != 'P') {
     message("Error","File format not recognized!");
-    return EXIT_FAILURE;
+    exit(-1);
   } else {
-    input->magic_number = fgetc(input->fh_in);
+    input->magic_number = getChunk(input);
     // should be a newline, but doesn't have to be, so advance to end of first line until we hit one
     while(fgetc(input->fh_in) != '\n');
     linecount++;
-  }
-  // Done with first line
-  printf("DBG: Done with the first line\n");
+  } // Done with first line
+  
 
   // Now traverse any comment lines in one loop
-  current_char = fgetc(input->fh_in);
+  CURRENT_CHAR = fgetc(input->fh_in);
   int done_with_comments = 0;
-  while(current_char != EOF) {
+  while(CURRENT_CHAR != EOF) {
     charcount++;
     // Deal with the comment lines by advancing until we hit a new line where first char is not #
     if(!done_with_comments) { // do this if only once
-      if(current_char == '#') {
-	while(!(prev_char == '\n' && current_char != '#')) {
-	  prev_char = current_char;
-	  current_char = fgetc(input->fh_in);
-	  if(current_char == '\n') {linecount++;}
+      if(CURRENT_CHAR == '#') {
+	while(!(PREV_CHAR == '\n' && CURRENT_CHAR != '#')) {
+	  PREV_CHAR = CURRENT_CHAR;
+	  CURRENT_CHAR = fgetc(input->fh_in);
+	  if(CURRENT_CHAR == '\n') {linecount++;}
 	}
       } else {
 	message("Warning","No comment lines detected, please double-check file");
       }
-      printf("DBG: done with comments on line %d\n",linecount);
       done_with_comments = 1;
-      //printf("DBG: advanced one char, prev: %c current: %c\n",prev_char,current_char);
     }
     
     // Now get the width/height, format checking as part of this
-    // idea -  isspace(),isblank() on fgetc result?
-    char *temp_chars = malloc(sizeof(char)*99);
-    prev_char = getChunk(current_char,temp_chars,input);
-    printf("DBG: Exited cc = (%c)\n",prev_char);
-
-    // convert temp_chars index into int to store
-    //    input->width = atoi(temp_chars);
-    input->width = temp_chars[0];
-    printf("DBG: done with width, stored %d\n",input->width);
+    input->width = getChunk(input);
 
     // Now height
-    char *temp2 = malloc(sizeof(char)*99);
-    prev_char = advanceToChunk(prev_char,input);
-    prev_char = getChunk(prev_char,temp2,input);
-    printf("DBG: Exited cc2 = (%c)\n",prev_char);
-    input->height = temp2[0];
-    printf("DBG: storing width/height %d,%d\n",input->width,input->height);
+    advanceToChunk(input);
+    input->height = getChunk(input);
     
     // Need the alpha channel next
     // If the Maxval is less than 256, it is 1 byte. Otherwise, it is 2 bytes. The most significant byte is first.
-    char *temp3 = malloc(sizeof(char)*99);
-    prev_char = advanceToChunk(prev_char,input);
-    prev_char = getChunk(prev_char,temp3,input);
-    input->alpha = temp3[0];
-    printf("DBG: storing alpha %d\n",input->alpha);
+    advanceToChunk(input);
+    input->alpha = getChunk(input);
     
-    // TODO: clean this mess up
-    for(int i = 0;i < 5; i++) {
-      printf("DBGf: tc[%d]: %c< t2[%d]: %c< %c<\n",i,temp_chars[i],i,temp2[i],temp3[i]);
-    }
-    free(temp_chars);
-    free(temp2);
     message("Info","Completed processing header information.");
+    reportPPMStruct(input);
+
     break;
   }
 
@@ -278,63 +262,60 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // continue until EOF
   // fgets(buffer,BUFFSIZE,exif); <-- could be useful, although with varying sizes of info don't see how
   message("Info","Process image information...");
-  pixel_map = malloc(sizeof(Pixel) * input->width * input->height);
-  char *temp_data = malloc(sizeof(char) * 3); //255 will be highest value
+  pixel_map = malloc(sizeof(Pixel) * input->width * input->height );
   int chunk_count = 0;
   int rgb_index = 0;
-  //  int total_pixels = atoi(input->width) * atoi(input->height) * 3;
-  // TODO: hack for inability to cast to int
-  int total_pixels = (input->width -48) * (input->height -48) * 3;
+  int pm_index = 0;
+  int total_pixels = (input->width) * (input->height) * 3;
 
   // This switch handles parsing the various input file formats for the image data
   switch(input->magic_number) {
-  case('3'):
+  case(3):
     message("Info","  format version: 3");
-    while(prev_char != EOF && chunk_count < total_pixels) {
+    while(PREV_CHAR != EOF && chunk_count < total_pixels) {
       rgb_index = chunk_count % 3;
-      prev_char = advanceToChunk(prev_char,input);
-      prev_char = getChunk(prev_char,temp_data,input);
-      // TODO: convert chunk to proper format
+      advanceToChunk(input);
+      int value = getChunk(input);
       switch(rgb_index) {
       case(0):
-	pixel_map[chunk_count].r = temp_data[0];
-	if(verbose) {printf("  stored %c to pixel_map red\n",pixel_map[chunk_count].r);}
+	pixel_map[pm_index].r = value;
+	if(VERBOSE) {printf("  stored %d to pixel_map red\n",pixel_map[pm_index].r);}
 	break;
       case(1):
-	pixel_map[chunk_count].g = temp_data[0];
-	if(verbose) {printf("  stored %c to pixel_map green\n",pixel_map[chunk_count].g);}
+	pixel_map[pm_index].g = value;
+	if(VERBOSE) {printf("  stored %d to pixel_map green\n",pixel_map[pm_index].g);}
 	break;
       case(2):
-	pixel_map[chunk_count].b = temp_data[0];
-	if(verbose) {printf("  stored %c to pixel_map blue\n",pixel_map[chunk_count].b);}
+	pixel_map[pm_index].b = value;
+	if(VERBOSE) {printf("  stored %d to pixel_map blue\n",pixel_map[pm_index].b);}
+	pm_index++;
 	break;
       }
       chunk_count++;
     }
     printf("read %d chunks\n",chunk_count);
+    /*
+    pixel_map[chunk_count+1].r = 0; // NULL terminators
+    pixel_map[chunk_count+1].g = 0;
+    pixel_map[chunk_count+1].b = 0;
+    pixel_map[chunk_count+1].a = 0;
+    */
     message("Info","Done reading PPM 3");
+    reportPixelMap(pixel_map);
     break;
-  case('6'):
+  case(6):
     message("Info","  format version: 6");
-    while(prev_char != EOF) {
-      prev_char = advanceToChunk(prev_char,input);
-      prev_char = getChunk(prev_char,temp_data,input);
-      chunk_count++;
-    }
     break;
-  case('7'):
+  case(7):
     message("Info","  format version: 7");
-    while(prev_char != EOF) {
-      prev_char = advanceToChunk(prev_char,input);
-      prev_char = getChunk(prev_char,temp_data,input);
-      chunk_count++;
-    }
     break;
   }
   
   // ------------------------------- END IMAGE ------------------------------
 
+  // finishing
   fclose(input->fh_in);
+  message("Info","Done");
   return input->magic_number;
 }
 
@@ -368,11 +349,11 @@ void writePPM (char *outfile, PPM_file_struct *output) {
   switch(output->magic_number) {
   case(3):
     message("Info","Outputting format 3");
-    // TODO: more cleanup for ascii<>int mess
-    while(pixel_index < (output->width - 48) * (output->height - 48)) {      
-      fprintf(fh_out,"%d %d %d",pixel_map[pixel_index].r,pixel_map[pixel_index].g,pixel_map[pixel_index].b);
-      modulo = (pixel_index + 1) % (output->width - 48);
-      printf("DBG wPPM modulo: %d, pi: %d\n",modulo, pixel_index);
+    while(pixel_index < (output->width) * (output->height)) {      
+      //      fprintf(fh_out,"%d %d %d",pixel_map[pixel_index].r,pixel_map[pixel_index].g,pixel_map[pixel_index].b);
+      fprintf(fh_out,"%3d %3d %3d",pixel_map[pixel_index].r,pixel_map[pixel_index].g,pixel_map[pixel_index].b);
+      modulo = (pixel_index + 1) % (output->width);
+      //      printf("DBG wPPM modulo: %d, pi: %d\n",modulo, pixel_index);
       if ( modulo == 0 ) {
 	fprintf(fh_out,"\n");
       } else {
@@ -405,31 +386,52 @@ void reportPPMStruct (PPM_file_struct *input) {
   printf("     alpha:        %d\n",input->alpha);
 }
 
+void reportPixelMap (Pixel *pm) {
+  int index = 0;
+  int fail_safe = 0;
+  while(index < sizeof(pm) && fail_safe < 1000) {
+    printf("rPM: [%d] = [%d,%d,%d]\n",index,pm[index].r,pm[index].g,pm[index].b);
+    index++;
+    fail_safe++;
+  }
+}
+
 // meant to be used with advanceToChunk function that basically skips whitespace
-char getChunk (char current, char *chunk, PPM_file_struct *input) {
+int getChunk (PPM_file_struct *input) {
   // if you do a getChunk from current, that's different from getChunk so manage it
   // Yes, always pass in a current character, and return the new current character (which is prev char)
     int tc_index = 0;
-    chunk[tc_index] = current;
+    int max_chars = 16;
+    char tmp[max_chars];
+    tmp[tc_index] = CURRENT_CHAR;
     
     do {
-      printf("DBG_gC: current (%d)%c\n",tc_index,current);
-      current = fgetc(input->fh_in);
-      chunk[++tc_index] = current;
+      //printf("DBG_gC: CURRENT_CHAR (%d)%c\n",tc_index,CURRENT_CHAR);
+      CURRENT_CHAR = fgetc(input->fh_in);
+      tmp[++tc_index] = CURRENT_CHAR;
       // fail safe
-      if(tc_index > 99) {
+      if(tc_index > max_chars) {
 	message("Error","File format error, more chars than expected without whitespace");
-	return '~'; // return something that shouldnt be found it the file
+	exit(-1);
       }
-    } while(current != ' ' && current != '\n' && current != EOF) ;
-    return current;
+    } while(CURRENT_CHAR != ' ' && CURRENT_CHAR != '\n' && CURRENT_CHAR != EOF) ;
+
+    // finish up and return converted value
+    tmp[tc_index] = 0;
+    PREV_CHAR = CURRENT_CHAR;
+    int value = atoi(tmp);
+    if(value > 256 || value < 0) {
+      message("Error","Unsupported byte sizes in image data, 0 to 256 is supported");
+      exit(-1);
+    }
+    return value;
 }
 
-char advanceToChunk (char current, PPM_file_struct *input) {
-  while(current == ' ' || current == '\n') {
-    current = fgetc(input->fh_in);
+void advanceToChunk (PPM_file_struct *input) {
+  while(CURRENT_CHAR == ' ' || CURRENT_CHAR == '\n') {
+    CURRENT_CHAR = fgetc(input->fh_in);
   }
-  return current;
+  PREV_CHAR = CURRENT_CHAR;
 }
 
 /*
