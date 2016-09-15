@@ -41,16 +41,8 @@ Functions:
   help         - print help message, usage, etc...
 
 Questions:
-1) RGB only even for reading an RGBA P7?
-
-2) how to deal with tokens: (array of whatever fgetc returns), basic help on dealing with strings. Having
-   same issue with comparing if input/output file names are same
-
+1) follow-up on string/getWord strategy, malloc worked, but how to free?
 3) GIMP can't read my P7's but emacs will
-
-3) compiler warnings
-ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
-
 4) tricks for dealing with binary so I can see what my P6 conversions are not correct?
 
 * remember to use pointer arithmetic to traverse?? not needed
@@ -69,6 +61,7 @@ Remember that we can manually set alpha channel to full intention as we read P3/
 
 
 Issues:
+// fgets(buffer,BUFFSIZE,exif); <-- could be useful, although with varying sizes of info don't see how
 ---------------------------------------------------------------------------------------
 */
 
@@ -210,6 +203,7 @@ void help () {
 //TODO: finish this up
 void closeAndExit () {
   free(RGB_PIXEL_MAP);
+  free(RGBA_PIXEL_MAP);
   //fclose(INPUT_FILE_DATA->fh_in);
   exit(-1);
 }
@@ -298,6 +292,10 @@ int readPPM (char *infile, PPM_file_struct *input) {
       // If the Maxval is less than 256, it is 1 byte. Otherwise, it is 2 bytes. The most significant byte is first.
       skipWhitespace(input);
       input->alpha = getNumber(256,input);
+
+      // Also need P7 values in case they get used
+      input->depth = 3;
+      input->tupltype = "RGB";
       
       message("Info","Completed processing header information.");
       
@@ -384,12 +382,9 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // ------------------------------- BEGIN IMAGE ----------------------------
   // To read the raster/buffer info:
   // need a case statement to deal with 3/6/7 formats separately
-  // start reading chars into an array until whitespace, then increment the column , store to pixmap, do it again+
-  // continue until \n, then increment row , column back to 0 repeat 1) above
-  // continue until EOF
-  // fgets(buffer,BUFFSIZE,exif); <-- could be useful, although with varying sizes of info don't see how
   message("Info","Process image information...");
-  RGB_PIXEL_MAP = malloc(sizeof(RGBPixel) * input->width * input->height );
+  RGB_PIXEL_MAP  = malloc(sizeof(RGBPixel)  * input->width * input->height );
+  //  RGBA_PIXEL_MAP = malloc(sizeof(RGBAPixel) * input->width * input->height );
   int number_count = 0;
   int rgb_index = 0;
   int pm_index = 0;
@@ -492,8 +487,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
 }
 
 int computeDepth() {
-  if (INPUT_FILE_DATA.tupltype == 'A') {
-    // TODO: need correct logic here
+  if ((strcmp(INPUT_FILE_DATA.tupltype,"RGB_ALPHA")) == 0) {
     return 4; 
   } else {
     return 3;
@@ -528,8 +522,8 @@ void convertFormatAndWritePPMHeader (FILE* fh) {
     fprintf(fh,"%d\n",          OUTPUT_FILE_DATA.alpha);
   } else if (magic_number == 7) {
     OUTPUT_FILE_DATA.depth      = computeDepth();
-    //    OUTPUT_FILE_DATA.tupltype   = computeTuplType();
-    OUTPUT_FILE_DATA.tupltype   = "RBG";
+    //OUTPUT_FILE_DATA.tupltype   = computeTuplType();
+    OUTPUT_FILE_DATA.tupltype   = "RGB";
     
     fprintf(fh,"WIDTH %d\n",    OUTPUT_FILE_DATA.width);
     fprintf(fh,"HEIGHT %d\n",   OUTPUT_FILE_DATA.height);
