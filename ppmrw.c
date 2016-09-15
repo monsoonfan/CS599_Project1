@@ -98,6 +98,7 @@ typedef struct PPM_file_struct {
   int height;
   int alpha;
   int depth;
+  //  char *tupltype;
   char *tupltype;
   //RGBPixel *pixel_map; // this is a problem, would need to dynamically malloc this thing to be efficient
   FILE* fh_in;
@@ -310,68 +311,65 @@ int readPPM (char *infile, PPM_file_struct *input) {
     int got_depth    = 0;
     int got_maxval   = 0;
     int got_tupltype = 0;
-    int got_endhdr   = 0;
     int comment_lines= 0;
     
-    while(CURRENT_CHAR != EOF && !got_endhdr) {
+    // This while is to process the header only, will get the next "word" and process
+  PH: while(CURRENT_CHAR != EOF) {
+      char *token_name;
       //    char *token_name;
-      char* token_name;
       token_name = getWord(input); // this is a hack, only getting first char of token but sould work
+
+      // Break out of the loop if ENDHDR
+      if (strcmp(token_name, "ENDHDR") == 0) {
+	message("Info","ENDHDR line reached");
+	break; 
+      }
+
+      // skip comment lines, else, advance the filehandle to next "word"
       if (token_name[0] == '#') {
-	printf("DBG tn[0] # skipping coments\n");
+	if (VERBOSE) printf("PH: tn[0] # skipping coments\n");
 	skipLine(input);
+	goto PH;
       } else {
-	printf("DBG tn[0]=%c skipping space\n",token_name[0]);
+	if (VERBOSE) printf("PH: token_name = %s     ...skipping space\n",token_name);
 	skipWhitespace(input); // position at the first char of the token, switch will grab token and advance line
       }
 
-      if (strcmp(token_name, "WIDTH") == 0) {printf("SUCCESS!");}
-      
-      switch(token_name[0]) {
-      case('W'):
+      // Series of if/else if to process each token appropriately
+      if (strcmp(token_name, "WIDTH") == 0) {
 	if(got_width) {message("Error","More than one WIDTH token!");}
 	message("Info","Processing WIDTH token");
 	input->width = getNumber(8224,input);
 	skipWhitespace(input);
 	got_width = 1;
-	break;
-      case('H'):
+      } else if (strcmp(token_name, "HEIGHT") == 0) {
 	if(got_height) {message("Error","More than one HEIGHT token!");}
 	message("Info","Processing HEIGHT token");
 	input->height = getNumber(8224,input);
 	skipWhitespace(input);
 	got_height = 1;
-	break;
-      case('D'):
+      } else if (strcmp(token_name, "DEPTH") == 0) {
 	if(got_depth) {message("Error","More than one DEPTH token!");}
 	message("Info","Processing DEPTH token");
 	input->depth = getNumber(4,input);
 	skipWhitespace(input);
 	got_depth = 1;
-	break;
-      case('M'):
+      } else if (strcmp(token_name, "MAXVAL") == 0) {
 	if(got_maxval) {message("Error","More than one MAXVAL token!");}
 	message("Info","Processing MAXVAL token");
 	input->alpha = getNumber(256,input);
 	skipWhitespace(input);
 	got_maxval = 1;
-	break;
-      case('T'):
+      } else if (strcmp(token_name, "TUPLTYPE") == 0) {
 	if(got_tupltype) {message("Error","More than one TUPLTYPE token!");}
 	message("Info","Processing TUPLTYPE token");
-	printf("DBG: getting tt\n");
 	input->tupltype = getWord(input);
-	printf("DBG1 got %c\n",input->tupltype);
-	//if(input->tupltype != 'R') {message("Error","Unsupported TUPLTYPE!");}
-	if(!strcmp(input->tupltype,"RGB")) {message("Error","Unsupported TUPLTYPE!");}
-	//	skipWhitespace(input);
+	if((strcmp(input->tupltype,"RGB")) != 0) {message("Error","Unsupported TUPLTYPE!");}
+	skipWhitespace(input);
 	got_tupltype = 1;
-	break;
-      case('E'):
-	if(got_endhdr) {message("Error","Could not recognize P7 header!");}
-	message("Info","ENDHDR line reached");
-	got_endhdr = 1;
-	break;
+      } else {
+	printf("Info: Processing %s token\n",token_name);	
+	message("Error","Unsupported token");
       }
     }
     if (got_width && got_height && got_depth && got_maxval && got_tupltype) {
@@ -602,7 +600,7 @@ void reportPPMStruct (PPM_file_struct *input) {
   printf("     max_value:    %d\n",input->alpha);
   printf("     depth:        %d\n",input->depth);
   // TODO fix this
-  printf("     tupltype:     %c\n",input->tupltype);
+  printf("     tupltype:     %s\n",input->tupltype);
   } else {
     printf("     alpha:        %d\n",input->alpha);
   }
@@ -654,36 +652,37 @@ int getNumber (int max_value, PPM_file_struct *input) {
 // TODO: need to work out the "maxval" error check here like getNumber
 char* getWord (PPM_file_struct *input) {
   int index = 0;
-  int max_chars = 256; // large enough to deal with TUPLTYPE tokens
+  int max_chars = 32; // large enough to deal with TUPLTYPE tokens
   //  char tmp[max_chars];
-  //char *tmp = malloc(sizeof(char)*max_chars);
-  static char tmp[64];
+  char *tmp = malloc(sizeof(char)*max_chars);
+  //static char tmp[64]; <- works, but seems to be corruption, DEPTHT
+  //char tmp[64]; <- core dumps
   //char *tmp;
-  tmp[index] = CURRENT_CHAR;
+  //tmp[index] = CURRENT_CHAR;
   
-  do {
-    if (VERBOSE) printf("gW: CURRENT_CHAR (%d)%c\n",index,CURRENT_CHAR);
+  while(CURRENT_CHAR != ' ' && CURRENT_CHAR != '\n' && CURRENT_CHAR != EOF) {
+    if (VERBOSE) printf("gW: CURRENT_CHAR (%d):%c\n",index,CURRENT_CHAR);
+    PREV_CHAR = CURRENT_CHAR;
     CURRENT_CHAR = fgetc(input->fh_in);
-    tmp[++index] = CURRENT_CHAR;
+    tmp[index++] = PREV_CHAR;
+    // error check
     if(index > max_chars) {
       message("Error","File format error, more chars than expected without whitespace");
     }
-  } while(CURRENT_CHAR != ' ' && CURRENT_CHAR != '\n' && CURRENT_CHAR != EOF) ;
+  } 
   //CURRENT_CHAR = fgetc(input->fh_in); // this was the cause of P7 read data corruption
 
   // finish up and return converted value
   tmp[++index] = 0; // NULL terminator
-  PREV_CHAR = CURRENT_CHAR;
 
-  // TODO: add this verbose back
-  //  if (VERBOSE) printf("gW: returning %s\n",tmp);
-  printf("gW: returning %s\n",tmp);
+  if (VERBOSE) printf("gW: returning (%s), index:(%d), CC:c()\n",tmp,index,CURRENT_CHAR);
 
   return tmp;
 
 }
 
 void skipWhitespace (PPM_file_struct *input) {
+  if (VERBOSE) printf("sS: skipping space...\n");
   while(CURRENT_CHAR == ' ' || CURRENT_CHAR == '\n') {
     CURRENT_CHAR = fgetc(input->fh_in);
   }
