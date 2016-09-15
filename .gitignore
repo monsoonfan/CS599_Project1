@@ -61,3 +61,5 @@ arraytest.c
 *checker*
 *.log
 
+teststring.c
+*.jpg

@@ -41,11 +41,12 @@ Functions:
   help         - print help message, usage, etc...
 
 Questions:
-1) seems to be a race condition of sorts detecting tupltype:
-ppmrw.c:335:18: warning: assignment makes pointer from integer without a cast [-Wint-conversion]
+1) RGB only even for reading an RGBA P7?
 
 2) how to deal with tokens: (array of whatever fgetc returns), basic help on dealing with strings. Having
    same issue with comparing if input/output file names are same
+
+3) GIMP can't read my P7's but emacs will
 
 3) compiler warnings
 ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
@@ -54,6 +55,19 @@ ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpoint
 
 * remember to use pointer arithmetic to traverse?? not needed
 
+// need to throw error about multibit, it's just if maxval > 256
+
+could do:
+int c = fgetc(fh)
+unsigned char ch = (unsigned char)c;
+
+Can do either goto error handler or eliminate the goto by doing a macro
+
+close files when exit on error, and free the buffer
+
+Remember that we can manually set alpha channel to full intention as we read P3/P6, so should be using RGBA pixel all the time?
+
+
 Issues:
 ---------------------------------------------------------------------------------------
 */
@@ -61,14 +75,21 @@ Issues:
 // libraries
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // typdefs
-typedef struct Pixel {
+typedef struct RGBPixel {
   unsigned char r;
   unsigned char g;
   unsigned char b;
-  //  unsigned char a;
-} Pixel ;
+} RGBPixel ;
+
+typedef struct RGBAPixel {
+  unsigned char r;
+  unsigned char g;
+  unsigned char b;
+  unsigned char a;
+} RGBAPixel ;
 
 typedef struct PPM_file_struct {
   char magic_number;
@@ -78,7 +99,7 @@ typedef struct PPM_file_struct {
   int alpha;
   int depth;
   char *tupltype;
-  //Pixel *pixel_map; // this is a problem, would need to dynamically malloc this thing to be efficient
+  //RGBPixel *pixel_map; // this is a problem, would need to dynamically malloc this thing to be efficient
   FILE* fh_in;
 } PPM_file_struct ;
 
@@ -89,9 +110,10 @@ int OUTPUT_MAGIC_NUMBER = 0;
 int VERBOSE             = 0; // controls logfile message level
 
 // global data structures
-PPM_file_struct  INPUT_FILE_DATA;
-Pixel           *PIXEL_MAP;
-PPM_file_struct  OUTPUT_FILE_DATA;
+PPM_file_struct     INPUT_FILE_DATA;
+RGBPixel           *RGB_PIXEL_MAP;
+RGBAPixel          *RGBA_PIXEL_MAP;
+PPM_file_struct     OUTPUT_FILE_DATA;
 
 
 // functions
@@ -100,16 +122,16 @@ void writePPM        (char *outfile,         PPM_file_struct *input);
 void message         (char message_code[],   char message[]        );
 
 void reportPPMStruct (PPM_file_struct *input);
-void reportPixelMap  (Pixel *pm             );
+void reportPixelMap  (RGBPixel *pm             );
 int  getNumber       (int max_value,         PPM_file_struct *input);
-char getWord         (PPM_file_struct *input);
+char* getWord         (PPM_file_struct *input);
 void skipWhitespace  (PPM_file_struct *input);
 void skipLine        (PPM_file_struct *input);
 void help            ();
 void convertFormatAndWritePPMHeader  (FILE* fh              );
 int computeDepth();
-char computeTuplType();
-
+char* computeTuplType();
+void closeAndExit ();
 /*
  ------------------------------------------------------------------
                                  MAIN
@@ -182,6 +204,13 @@ void message (char message_code[], char message[]) {
 void help () {
   message("Error","Invalid arguments!");
   message("Usage","ppmrw 3 input.ppm output.ppm");
+}
+
+//TODO: finish this up
+void closeAndExit () {
+  free(RGB_PIXEL_MAP);
+  //fclose(INPUT_FILE_DATA->fh_in);
+  exit(-1);
 }
 
 /*
@@ -286,21 +315,19 @@ int readPPM (char *infile, PPM_file_struct *input) {
     
     while(CURRENT_CHAR != EOF && !got_endhdr) {
       //    char *token_name;
-      char token_name[32];
-      *token_name = getWord(input); // this is a hack, only getting first char of token but sould work
-      //      printf("DBG tn[0]: (%c)\n",*token_name);
-      // TODO: clean this up, was what I was trying when trying to match the whole token
-      /*
-	for (int i = 0; i < 32; i++) {printf("tn[%d]:%c\n",i,*(token_name+1));}
-	printf("DBG tn[0]: (%c)\n",*token_name);
-      */
-      if (*token_name == '#') {
+      char* token_name;
+      token_name = getWord(input); // this is a hack, only getting first char of token but sould work
+      if (token_name[0] == '#') {
+	printf("DBG tn[0] # skipping coments\n");
 	skipLine(input);
       } else {
+	printf("DBG tn[0]=%c skipping space\n",token_name[0]);
 	skipWhitespace(input); // position at the first char of the token, switch will grab token and advance line
       }
+
+      if (strcmp(token_name, "WIDTH") == 0) {printf("SUCCESS!");}
       
-      switch(*token_name) {
+      switch(token_name[0]) {
       case('W'):
 	if(got_width) {message("Error","More than one WIDTH token!");}
 	message("Info","Processing WIDTH token");
@@ -332,9 +359,12 @@ int readPPM (char *infile, PPM_file_struct *input) {
       case('T'):
 	if(got_tupltype) {message("Error","More than one TUPLTYPE token!");}
 	message("Info","Processing TUPLTYPE token");
+	printf("DBG: getting tt\n");
 	input->tupltype = getWord(input);
-	printf("DBG got %c\n",input->tupltype);
-	if(input->tupltype != 'R') {message("Error","Unsupported TUPLTYPE!");}
+	printf("DBG1 got %c\n",input->tupltype);
+	//if(input->tupltype != 'R') {message("Error","Unsupported TUPLTYPE!");}
+	if(!strcmp(input->tupltype,"RGB")) {message("Error","Unsupported TUPLTYPE!");}
+	//	skipWhitespace(input);
 	got_tupltype = 1;
 	break;
       case('E'):
@@ -361,7 +391,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // continue until EOF
   // fgets(buffer,BUFFSIZE,exif); <-- could be useful, although with varying sizes of info don't see how
   message("Info","Process image information...");
-  PIXEL_MAP = malloc(sizeof(Pixel) * input->width * input->height );
+  RGB_PIXEL_MAP = malloc(sizeof(RGBPixel) * input->width * input->height );
   int number_count = 0;
   int rgb_index = 0;
   int pm_index = 0;
@@ -377,30 +407,24 @@ int readPPM (char *infile, PPM_file_struct *input) {
       int value = getNumber(255,input);
       switch(rgb_index) {
       case(0):
-	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) printf("  stored[%d] %d to PIXEL_MAP red\n",pm_index,PIXEL_MAP[pm_index].r);
+	RGB_PIXEL_MAP[pm_index].r = value;
+	if(VERBOSE) printf("  stored[%d] %d to RGB_PIXEL_MAP red\n",pm_index,RGB_PIXEL_MAP[pm_index].r);
 	break;
       case(1):
-	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) printf("  stored[%d] %d to PIXEL_MAP green\n",pm_index,PIXEL_MAP[pm_index].g);
+	RGB_PIXEL_MAP[pm_index].g = value;
+	if(VERBOSE) printf("  stored[%d] %d to RGB_PIXEL_MAP green\n",pm_index,RGB_PIXEL_MAP[pm_index].g);
 	break;
       case(2):
-	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) printf("  stored[%d] %d to PIXEL_MAP blue\n",pm_index,PIXEL_MAP[pm_index].b);
+	RGB_PIXEL_MAP[pm_index].b = value;
+	if(VERBOSE) printf("  stored[%d] %d to RGB_PIXEL_MAP blue\n",pm_index,RGB_PIXEL_MAP[pm_index].b);
 	pm_index++;
 	break;
       }
       number_count++;
     }
     printf("read %d numbers\n",number_count);
-    /*
-    PIXEL_MAP[number_count+1].r = 0; // NULL terminators
-    PIXEL_MAP[number_count+1].g = 0;
-    PIXEL_MAP[number_count+1].b = 0;
-    PIXEL_MAP[number_count+1].a = 0;
-    */
     message("Info","Done reading PPM 3");
-    //reportPixelMap(PIXEL_MAP);
+    //reportPixelMap(RGB_PIXEL_MAP);
     break;
   case(6):
     message("Info","  format version: 6");
@@ -409,19 +433,20 @@ int readPPM (char *infile, PPM_file_struct *input) {
       unsigned char value;
       rgb_index = number_count % 3;
       // TODO: fread error checking (don't exceed max val and don't hit EOF)
-      if (!fread(&value,sizeof(Pixel)/3,1,input->fh_in)) {message("Error","Binary data read error");}
+      //      if (!fread(&value,sizeof(RGBPixel)/3,1,input->fh_in)) {message("Error","Binary data read error");}
+      if (!fread(&value,sizeof(unsigned char),1,input->fh_in)) {message("Error","Binary data read error");}
       switch(rgb_index) {
       case(0):
-	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);
+	RGB_PIXEL_MAP[pm_index].r = value;
+	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP red\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].r);
 	break;
       case(1):
-	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);
+	RGB_PIXEL_MAP[pm_index].g = value;
+	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP green\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].g);
 	break;
       case(2):
-	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);
+	RGB_PIXEL_MAP[pm_index].b = value;
+	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP blue\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].b);
 	pm_index++;
 	break;
       }
@@ -436,19 +461,20 @@ int readPPM (char *infile, PPM_file_struct *input) {
       unsigned char value;
       rgb_index = number_count % 3;
       // TODO: fread error checking (don't exceed max val and don't hit EOF)
-      fread(&value,sizeof(Pixel)/3,1,input->fh_in);
+      //      if (!fread(&value,sizeof(RGBPixel)/3,1,input->fh_in)) {message("Error","Binary data read error");}
+      if (!fread(&value,sizeof(unsigned char),1,input->fh_in)) {message("Error","Binary data read error");}
       switch(rgb_index) {
       case(0):
-	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);
+	RGB_PIXEL_MAP[pm_index].r = value;
+	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP red\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].r);
 	break;
       case(1):
-	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);
+	RGB_PIXEL_MAP[pm_index].g = value;
+	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP green\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].g);
 	break;
       case(2):
-	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);
+	RGB_PIXEL_MAP[pm_index].b = value;
+	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP blue\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].b);
 	pm_index++;
 	break;
       }
@@ -468,14 +494,14 @@ int readPPM (char *infile, PPM_file_struct *input) {
 }
 
 int computeDepth() {
-  if (INPUT_FILE_DATA.magic_number != 7) {
+  if (INPUT_FILE_DATA.tupltype == 'A') {
     // TODO: need correct logic here
-    return 1; 
+    return 4; 
   } else {
-    return INPUT_FILE_DATA.depth;
+    return 3;
   }
 }
-char computeTuplType() {
+char* computeTuplType() {
     // TODO: need correct logic here
   if (INPUT_FILE_DATA.tupltype != "RBG_ALPHA") {
     // TODO: need correct logic here
@@ -536,7 +562,7 @@ void writePPM (char *outfile, PPM_file_struct *input) {
   case(3):
     message("Info","Outputting format 3");
     while(pixel_index < (OUTPUT_FILE_DATA.width) * (OUTPUT_FILE_DATA.height)) {      
-      fprintf(fh_out,"%3d %3d %3d",PIXEL_MAP[pixel_index].r,PIXEL_MAP[pixel_index].g,PIXEL_MAP[pixel_index].b);
+      fprintf(fh_out,"%3d %3d %3d",RGB_PIXEL_MAP[pixel_index].r,RGB_PIXEL_MAP[pixel_index].g,RGB_PIXEL_MAP[pixel_index].b);
       modulo = (pixel_index + 1) % (OUTPUT_FILE_DATA.width);
       if ( modulo == 0 ) {
 	fprintf(fh_out,"\n");
@@ -549,12 +575,12 @@ void writePPM (char *outfile, PPM_file_struct *input) {
   // P6 format
   case(6):
     message("Info","Outputting format 6");
-    fwrite(PIXEL_MAP, sizeof(Pixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
+    fwrite(RGB_PIXEL_MAP, sizeof(RGBPixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
   // P7 format
   case(7):
     message("Info","Outputting format 7");
-    fwrite(PIXEL_MAP, sizeof(Pixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
+    fwrite(RGB_PIXEL_MAP, sizeof(RGBPixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
   default:
     message("Error","Unrecognized output format");
@@ -582,7 +608,7 @@ void reportPPMStruct (PPM_file_struct *input) {
   }
 }
 
-void reportPixelMap (Pixel *pm) {
+void reportPixelMap (RGBPixel *pm) {
   int index = 0;
   int fail_safe = 0;
   while(index < sizeof(pm) && fail_safe < 1000) {
@@ -626,10 +652,12 @@ int getNumber (int max_value, PPM_file_struct *input) {
 }
 
 // TODO: need to work out the "maxval" error check here like getNumber
-char getWord (PPM_file_struct *input) {
+char* getWord (PPM_file_struct *input) {
   int index = 0;
-  int max_chars = 32; // large enough to deal with TUPLTYPE tokens
-  char tmp[max_chars];
+  int max_chars = 256; // large enough to deal with TUPLTYPE tokens
+  //  char tmp[max_chars];
+  //char *tmp = malloc(sizeof(char)*max_chars);
+  static char tmp[64];
   //char *tmp;
   tmp[index] = CURRENT_CHAR;
   
@@ -647,9 +675,11 @@ char getWord (PPM_file_struct *input) {
   tmp[++index] = 0; // NULL terminator
   PREV_CHAR = CURRENT_CHAR;
 
-  if (VERBOSE) printf("gW: returning %d\n",*tmp);
+  // TODO: add this verbose back
+  //  if (VERBOSE) printf("gW: returning %s\n",tmp);
+  printf("gW: returning %s\n",tmp);
 
-  return *tmp;
+  return tmp;
 
 }
 
