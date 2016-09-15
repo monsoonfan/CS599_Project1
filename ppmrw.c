@@ -44,12 +44,17 @@ Questions:
 1) compiler warnings
 ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
 
-2) tricks for dealing with binary so I can see what my P6 conversions are not correct?
+2) tricks for dealing with binary so I can see what my P6 conversions are not correct? Looks like a windows issue, pixmap also looks bad for me but was fine on mac.
+(wasn't writing alpha, but interestingly, pixmap.c that we did in class is messed up until I put it's binary in ppm)
 
 3) how to deal with tokens: (array of whatever fgetc returns)
 
 * remember to use pointer arithmetic to traverse
 
+Issues: (looks like any binary read is busted)
+p7out7
+p6out7
+p3out7
 ---------------------------------------------------------------------------------------
 */
 
@@ -62,7 +67,7 @@ typedef struct Pixel {
   unsigned char r;
   unsigned char g;
   unsigned char b;
-  unsigned char a;
+  //  unsigned char a;
 } Pixel ;
 
 typedef struct PPM_file_struct {
@@ -84,9 +89,9 @@ int OUTPUT_MAGIC_NUMBER = 0;
 int VERBOSE             = 0; // controls logfile message level
 
 // global data structures
-PPM_file_struct INPUT_FILE_DATA;
-Pixel *PIXEL_MAP;
-PPM_file_struct OUTPUT_FILE_DATA;
+PPM_file_struct  INPUT_FILE_DATA;
+Pixel           *PIXEL_MAP;
+PPM_file_struct  OUTPUT_FILE_DATA;
 
 
 // functions
@@ -408,12 +413,16 @@ int readPPM (char *infile, PPM_file_struct *input) {
   case(6):
     message("Info","  format version: 6");
     while(number_count < total_pixels) {
-      int value[4];
+      //      int value[4];
+      unsigned char value;
       rgb_index = number_count % 3;
-      fread(value,sizeof(Pixel),1,input->fh_in);
+      // TODO: fread error checking (don't exceed max val and don't hit EOF)
+      //      fread(value,sizeof(Pixel),1,input->fh_in);
+      int size = fread(&value,sizeof(Pixel)/3,1,input->fh_in);
+      printf("   fread %d bytes of data\n",size);
       switch(rgb_index) {
       case(0):
-	PIXEL_MAP[pm_index].r = (char)value;
+	PIXEL_MAP[pm_index].r = value;
 	if(VERBOSE) {printf("  stored %d to PIXEL_MAP red\n",PIXEL_MAP[pm_index].r);}
 	break;
       case(1):
@@ -433,12 +442,15 @@ int readPPM (char *infile, PPM_file_struct *input) {
   case(7):
     message("Info","  format version: 7");
     while(number_count < total_pixels) {
-      int value[4];
+      unsigned char value;
       rgb_index = number_count % 3;
-      fread(value,sizeof(Pixel),1,input->fh_in);
+      // TODO: fread error checking (don't exceed max val and don't hit EOF)
+      //      fread(value,sizeof(Pixel),1,input->fh_in);
+      int size = fread(&value,sizeof(Pixel)/3,1,input->fh_in);
+      printf("   fread %d bytes of data\n",size);
       switch(rgb_index) {
       case(0):
-	PIXEL_MAP[pm_index].r = (char)value;
+	PIXEL_MAP[pm_index].r = value;
 	if(VERBOSE) {printf("  stored %d to PIXEL_MAP red\n",PIXEL_MAP[pm_index].r);}
 	break;
       case(1):

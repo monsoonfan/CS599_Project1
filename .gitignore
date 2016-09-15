@@ -45,18 +45,17 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
-Makefile~
-*.c~
+*~
 *.exe
-*.txt~
 out_test.txt
 *.stackdump
 p6out_test.ppm
 testio.c
 ppmrw_readv1.c
 scribble.xcf
-*.ppm~
-pixmap.c
+pixmap*.c
 p7test.ppm
 arraytest.c
-p7out_test.ppm
+*out_test.ppm
+*.data
+*checker*
