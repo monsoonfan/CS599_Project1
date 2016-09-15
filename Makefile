@@ -9,6 +9,10 @@
 all: ppmrw.c
 	gcc ppmrw.c -o ppmrw
 
+# assuming VERBOSE is set to 1 in ppmrw.c
+verbose: ppmrw.c
+	gcc ppmrw.c -o ppmrw_v
+
 clean:
 	rm ppmrw.exe
 

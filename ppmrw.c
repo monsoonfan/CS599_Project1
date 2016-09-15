@@ -41,20 +41,20 @@ Functions:
   help         - print help message, usage, etc...
 
 Questions:
-1) compiler warnings
+1) seems to be a race condition of sorts detecting tupltype:
+ppmrw.c:335:18: warning: assignment makes pointer from integer without a cast [-Wint-conversion]
+
+2) how to deal with tokens: (array of whatever fgetc returns), basic help on dealing with strings. Having
+   same issue with comparing if input/output file names are same
+
+3) compiler warnings
 ppmrw.c:321:26: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
 
-2) tricks for dealing with binary so I can see what my P6 conversions are not correct? Looks like a windows issue, pixmap also looks bad for me but was fine on mac.
-(wasn't writing alpha, but interestingly, pixmap.c that we did in class is messed up until I put it's binary in ppm)
+4) tricks for dealing with binary so I can see what my P6 conversions are not correct?
 
-3) how to deal with tokens: (array of whatever fgetc returns)
+* remember to use pointer arithmetic to traverse?? not needed
 
-* remember to use pointer arithmetic to traverse
-
-Issues: (looks like any binary read is busted)
-p7out7
-p6out7
-p3out7
+Issues:
 ---------------------------------------------------------------------------------------
 */
 
@@ -95,13 +95,13 @@ PPM_file_struct  OUTPUT_FILE_DATA;
 
 
 // functions
-int  readPPM         (char *infile,          PPM_file_struct *input                          );
-void writePPM        (char *outfile,         PPM_file_struct *input                          );
-void message         (char message_code[],   char message[]                                  );
+int  readPPM         (char *infile,          PPM_file_struct *input);
+void writePPM        (char *outfile,         PPM_file_struct *input);
+void message         (char message_code[],   char message[]        );
 
 void reportPPMStruct (PPM_file_struct *input);
 void reportPixelMap  (Pixel *pm             );
-int  getNumber       (PPM_file_struct *input);
+int  getNumber       (int max_value,         PPM_file_struct *input);
 char getWord         (PPM_file_struct *input);
 void skipWhitespace  (PPM_file_struct *input);
 void skipLine        (PPM_file_struct *input);
@@ -128,6 +128,7 @@ int main(int argc, char *argv[]) {
   OUTPUT_MAGIC_NUMBER = atoi(argv[1]);
   char *infile = argv[2];
   char *outfile = argv[3];
+  if (infile == outfile) {message("Error","input and output file names the same!"); return EXIT_FAILURE;}
   printf("Converting file to format %d ...\n",OUTPUT_MAGIC_NUMBER);
   printf("    Input : %s\n",infile);
   printf("    Output: %s\n",outfile);
@@ -231,14 +232,13 @@ int readPPM (char *infile, PPM_file_struct *input) {
   if (first_char != 'P') {
     message("Error","File format not recognized!");
   } else {
-    input->magic_number = getNumber(input);
+    input->magic_number = getNumber(7,input);
     linecount++;
     CURRENT_CHAR = fgetc(input->fh_in);
   } // Done with first line, advanced to 1st char of 2nd line
   
   // P3/P6 cases - Now traverse any comment lines in one loop
   if (input->magic_number == 3 ||input->magic_number == 6) {
-    printf("DBG p3 or p6 header case\n");
     int done_with_comments = 0;
     while(CURRENT_CHAR != EOF) {
       charcount++;
@@ -258,16 +258,16 @@ int readPPM (char *infile, PPM_file_struct *input) {
       }
       
       // Now get the width/height, format checking as part of this
-      input->width = getNumber(input);
+      input->width = getNumber(8224,input);
       
       // Now height
       skipWhitespace(input);
-      input->height = getNumber(input);
+      input->height = getNumber(8224,input);
       
       // Need the alpha channel next
       // If the Maxval is less than 256, it is 1 byte. Otherwise, it is 2 bytes. The most significant byte is first.
       skipWhitespace(input);
-      input->alpha = getNumber(input);
+      input->alpha = getNumber(256,input);
       
       message("Info","Completed processing header information.");
       
@@ -304,28 +304,28 @@ int readPPM (char *infile, PPM_file_struct *input) {
       case('W'):
 	if(got_width) {message("Error","More than one WIDTH token!");}
 	message("Info","Processing WIDTH token");
-	input->width = getNumber(input);
+	input->width = getNumber(8224,input);
 	skipWhitespace(input);
 	got_width = 1;
 	break;
       case('H'):
 	if(got_height) {message("Error","More than one HEIGHT token!");}
 	message("Info","Processing HEIGHT token");
-	input->height = getNumber(input);
+	input->height = getNumber(8224,input);
 	skipWhitespace(input);
 	got_height = 1;
 	break;
       case('D'):
 	if(got_depth) {message("Error","More than one DEPTH token!");}
 	message("Info","Processing DEPTH token");
-	input->depth = getNumber(input);
+	input->depth = getNumber(4,input);
 	skipWhitespace(input);
 	got_depth = 1;
 	break;
       case('M'):
 	if(got_maxval) {message("Error","More than one MAXVAL token!");}
 	message("Info","Processing MAXVAL token");
-	input->alpha = getNumber(input);
+	input->alpha = getNumber(256,input);
 	skipWhitespace(input);
 	got_maxval = 1;
 	break;
@@ -333,28 +333,19 @@ int readPPM (char *infile, PPM_file_struct *input) {
 	if(got_tupltype) {message("Error","More than one TUPLTYPE token!");}
 	message("Info","Processing TUPLTYPE token");
 	input->tupltype = getWord(input);
+	printf("DBG got %c\n",input->tupltype);
 	if(input->tupltype != 'R') {message("Error","Unsupported TUPLTYPE!");}
 	got_tupltype = 1;
 	break;
       case('E'):
 	if(got_endhdr) {message("Error","Could not recognize P7 header!");}
-	message("Info","DBG ENDHDR line reached");
-	//	printf("DBG: set exit with cc (%c)(%c)(%c)\n",CURRENT_CHAR,PREV_CHAR,fgetc(input->fh_in));
+	message("Info","ENDHDR line reached");
 	got_endhdr = 1;
-	break;
-      default:
-	// TODO: clean this up, don't need a default case here because it's okay to not have a token, could be # line
-	if(*token_name == '#') {
-	  comment_lines++;
-	} else {
-	  message("Warning","Expected a token in P7 header file");
-	}
 	break;
       }
     }
     if (got_width && got_height && got_depth && got_maxval && got_tupltype) {
       message("Info","Done processing header");
-      printf("Info: there were %d comment lines\n",comment_lines);
     } else {
       message("Error","Missing token(s), invalid header!");
     }
@@ -383,19 +374,19 @@ int readPPM (char *infile, PPM_file_struct *input) {
     while(PREV_CHAR != EOF && number_count < total_pixels) {
       rgb_index = number_count % 3;
       skipWhitespace(input);
-      int value = getNumber(input);
+      int value = getNumber(255,input);
       switch(rgb_index) {
       case(0):
 	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) {printf("  stored[%d] %d to PIXEL_MAP red\n",pm_index,PIXEL_MAP[pm_index].r);}
+	if(VERBOSE) printf("  stored[%d] %d to PIXEL_MAP red\n",pm_index,PIXEL_MAP[pm_index].r);
 	break;
       case(1):
 	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) {printf("  stored[%d] %d to PIXEL_MAP green\n",pm_index,PIXEL_MAP[pm_index].g);}
+	if(VERBOSE) printf("  stored[%d] %d to PIXEL_MAP green\n",pm_index,PIXEL_MAP[pm_index].g);
 	break;
       case(2):
 	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) {printf("  stored[%d] %d to PIXEL_MAP blue\n",pm_index,PIXEL_MAP[pm_index].b);}
+	if(VERBOSE) printf("  stored[%d] %d to PIXEL_MAP blue\n",pm_index,PIXEL_MAP[pm_index].b);
 	pm_index++;
 	break;
       }
@@ -422,15 +413,15 @@ int readPPM (char *infile, PPM_file_struct *input) {
       switch(rgb_index) {
       case(0):
 	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);}
+	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);
 	break;
       case(1):
 	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);}
+	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);
 	break;
       case(2):
 	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);}
+	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);
 	pm_index++;
 	break;
       }
@@ -440,7 +431,6 @@ int readPPM (char *infile, PPM_file_struct *input) {
     break;
   case(7):
     message("Info","  format version: 7");
-    printf("DBG: fread from cc(%d) pc(%d)\n",&CURRENT_CHAR,&PREV_CHAR);
     while(number_count < total_pixels) {
       //      int value[4];
       unsigned char value;
@@ -450,15 +440,15 @@ int readPPM (char *infile, PPM_file_struct *input) {
       switch(rgb_index) {
       case(0):
 	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);}
+	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);
 	break;
       case(1):
 	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);}
+	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);
 	break;
       case(2):
 	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);}
+	if(VERBOSE) printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);
 	pm_index++;
 	break;
       }
@@ -559,13 +549,11 @@ void writePPM (char *outfile, PPM_file_struct *input) {
   // P6 format
   case(6):
     message("Info","Outputting format 6");
-    // TODO: this is writing but the image is broken somehow, need to fix
     fwrite(PIXEL_MAP, sizeof(Pixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
   // P7 format
   case(7):
     message("Info","Outputting format 7");
-    // TODO: this is writing but the image is broken somehow, need to fix
     fwrite(PIXEL_MAP, sizeof(Pixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
   default:
@@ -605,7 +593,7 @@ void reportPixelMap (Pixel *pm) {
 }
 
 // meant to be used with skipWhitespace function that basically skips whitespace
-int getNumber (PPM_file_struct *input) {
+int getNumber (int max_value, PPM_file_struct *input) {
   // if you do a getNumber from current, that's different from getNumber so manage it
   // Yes, always pass in a current character, and return the new current character (which is prev char)
   int tc_index = 0;
@@ -614,7 +602,7 @@ int getNumber (PPM_file_struct *input) {
   tmp[tc_index] = CURRENT_CHAR;
   
   do {
-    //printf("DBG_gN: CURRENT_CHAR (%d)%c\n",tc_index,CURRENT_CHAR);
+    if (VERBOSE) printf("gN: CURRENT_CHAR (%d)%c\n",tc_index,CURRENT_CHAR);
     CURRENT_CHAR = fgetc(input->fh_in);
     tmp[++tc_index] = CURRENT_CHAR;
     // fail safe
@@ -628,13 +616,16 @@ int getNumber (PPM_file_struct *input) {
   tmp[tc_index] = 0;
   PREV_CHAR = CURRENT_CHAR;
   int value = atoi(tmp);
+  if (VERBOSE) printf("gN: returning %d\n",value);
+
   // error checking
-  if(value > 256 || value < 0) {
+  if(value > max_value || value < 0) {
     message("Error","Unsupported byte sizes in image data, 0 to 256 is supported");
   }
   return value;
 }
 
+// TODO: need to work out the "maxval" error check here like getNumber
 char getWord (PPM_file_struct *input) {
   int index = 0;
   int max_chars = 32; // large enough to deal with TUPLTYPE tokens
@@ -643,19 +634,21 @@ char getWord (PPM_file_struct *input) {
   tmp[index] = CURRENT_CHAR;
   
   do {
-    //printf("DBG_gW: CURRENT_CHAR (%d)%c\n",index,CURRENT_CHAR);
+    if (VERBOSE) printf("gW: CURRENT_CHAR (%d)%c\n",index,CURRENT_CHAR);
     CURRENT_CHAR = fgetc(input->fh_in);
     tmp[++index] = CURRENT_CHAR;
     if(index > max_chars) {
       message("Error","File format error, more chars than expected without whitespace");
     }
   } while(CURRENT_CHAR != ' ' && CURRENT_CHAR != '\n' && CURRENT_CHAR != EOF) ;
-  //CURRENT_CHAR = fgetc(input->fh_in);
+  //CURRENT_CHAR = fgetc(input->fh_in); // this was the cause of P7 read data corruption
 
   // finish up and return converted value
   tmp[++index] = 0; // NULL terminator
   PREV_CHAR = CURRENT_CHAR;
-  //printf("DBG: returning %d\n",*tmp);
+
+  if (VERBOSE) printf("gW: returning %d\n",*tmp);
+
   return *tmp;
 
 }
@@ -668,24 +661,11 @@ void skipWhitespace (PPM_file_struct *input) {
 }
 
 void skipLine (PPM_file_struct *input) {
-  //printf("DBG skipline\n");
+  if (VERBOSE) printf("sL: skipping line...\n");
   while(CURRENT_CHAR != '\n') {
-    //printf("   skipping %c\n",CURRENT_CHAR);
+    if (VERBOSE) printf("   skipping %c\n",CURRENT_CHAR);
     CURRENT_CHAR = fgetc(input->fh_in);
   }
   CURRENT_CHAR = fgetc(input->fh_in); // advance past the \n as getWord/Number are designed to work this way
   PREV_CHAR = CURRENT_CHAR;
 }
-
-/*
-  OLD CODE for reference
-
-// working code for traversing file char by char
-  char current_char = getc(input->fh_in);
-  while(current_char != EOF) {
-    printf("Processing char: %c\n",current_char);
-    fprintf(stdout, "(%c)", current_char);
-    //    fprintf(fh_out, "%c", current_char);
-    current_char = getc(input->fh_in);
-  }
-*/
