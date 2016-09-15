@@ -56,6 +56,8 @@ scribble.xcf
 pixmap*.c
 p7test.ppm
 arraytest.c
-*out_test.ppm
+*_test.ppm
 *.data
 *checker*
+*.log
+

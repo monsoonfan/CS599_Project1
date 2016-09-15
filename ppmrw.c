@@ -339,11 +339,12 @@ int readPPM (char *infile, PPM_file_struct *input) {
       case('E'):
 	if(got_endhdr) {message("Error","Could not recognize P7 header!");}
 	message("Info","DBG ENDHDR line reached");
+	//	printf("DBG: set exit with cc (%c)(%c)(%c)\n",CURRENT_CHAR,PREV_CHAR,fgetc(input->fh_in));
 	got_endhdr = 1;
 	break;
       default:
 	// TODO: clean this up, don't need a default case here because it's okay to not have a token, could be # line
-	if(*token_name = '#') {
+	if(*token_name == '#') {
 	  comment_lines++;
 	} else {
 	  message("Warning","Expected a token in P7 header file");
@@ -386,15 +387,15 @@ int readPPM (char *infile, PPM_file_struct *input) {
       switch(rgb_index) {
       case(0):
 	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP red\n",PIXEL_MAP[pm_index].r);}
+	if(VERBOSE) {printf("  stored[%d] %d to PIXEL_MAP red\n",pm_index,PIXEL_MAP[pm_index].r);}
 	break;
       case(1):
 	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP green\n",PIXEL_MAP[pm_index].g);}
+	if(VERBOSE) {printf("  stored[%d] %d to PIXEL_MAP green\n",pm_index,PIXEL_MAP[pm_index].g);}
 	break;
       case(2):
 	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP blue\n",PIXEL_MAP[pm_index].b);}
+	if(VERBOSE) {printf("  stored[%d] %d to PIXEL_MAP blue\n",pm_index,PIXEL_MAP[pm_index].b);}
 	pm_index++;
 	break;
       }
@@ -417,21 +418,19 @@ int readPPM (char *infile, PPM_file_struct *input) {
       unsigned char value;
       rgb_index = number_count % 3;
       // TODO: fread error checking (don't exceed max val and don't hit EOF)
-      //      fread(value,sizeof(Pixel),1,input->fh_in);
-      int size = fread(&value,sizeof(Pixel)/3,1,input->fh_in);
-      printf("   fread %d bytes of data\n",size);
+      if (!fread(&value,sizeof(Pixel)/3,1,input->fh_in)) {message("Error","Binary data read error");}
       switch(rgb_index) {
       case(0):
 	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP red\n",PIXEL_MAP[pm_index].r);}
+	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);}
 	break;
       case(1):
 	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP green\n",PIXEL_MAP[pm_index].g);}
+	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);}
 	break;
       case(2):
 	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP blue\n",PIXEL_MAP[pm_index].b);}
+	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);}
 	pm_index++;
 	break;
       }
@@ -441,25 +440,25 @@ int readPPM (char *infile, PPM_file_struct *input) {
     break;
   case(7):
     message("Info","  format version: 7");
+    printf("DBG: fread from cc(%d) pc(%d)\n",&CURRENT_CHAR,&PREV_CHAR);
     while(number_count < total_pixels) {
+      //      int value[4];
       unsigned char value;
       rgb_index = number_count % 3;
       // TODO: fread error checking (don't exceed max val and don't hit EOF)
-      //      fread(value,sizeof(Pixel),1,input->fh_in);
-      int size = fread(&value,sizeof(Pixel)/3,1,input->fh_in);
-      printf("   fread %d bytes of data\n",size);
+      fread(&value,sizeof(Pixel)/3,1,input->fh_in);
       switch(rgb_index) {
       case(0):
 	PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP red\n",PIXEL_MAP[pm_index].r);}
+	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP red\n",pm_index,rgb_index,PIXEL_MAP[pm_index].r);}
 	break;
       case(1):
 	PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP green\n",PIXEL_MAP[pm_index].g);}
+	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP green\n",pm_index,rgb_index,PIXEL_MAP[pm_index].g);}
 	break;
       case(2):
 	PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) {printf("  stored %d to PIXEL_MAP blue\n",PIXEL_MAP[pm_index].b);}
+	if(VERBOSE) {printf("  stored[%d](%d) %d to PIXEL_MAP blue\n",pm_index,rgb_index,PIXEL_MAP[pm_index].b);}
 	pm_index++;
 	break;
       }
@@ -651,7 +650,7 @@ char getWord (PPM_file_struct *input) {
       message("Error","File format error, more chars than expected without whitespace");
     }
   } while(CURRENT_CHAR != ' ' && CURRENT_CHAR != '\n' && CURRENT_CHAR != EOF) ;
-  CURRENT_CHAR = fgetc(input->fh_in);
+  //CURRENT_CHAR = fgetc(input->fh_in);
 
   // finish up and return converted value
   tmp[++index] = 0; // NULL terminator
