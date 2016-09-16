@@ -125,6 +125,7 @@ void help            ();
 void convertFormatAndWritePPMHeader  (FILE* fh              );
 int computeDepth();
 char* computeTuplType();
+void freeGlobalMemory ();
 void closeAndExit ();
 /*
  ------------------------------------------------------------------
@@ -157,6 +158,9 @@ int main(int argc, char *argv[]) {
 
   // Verify correct output
 
+  // free all globally allocated memory
+  freeGlobalMemory();
+    
   // Successful exit was reached
   return EXIT_SUCCESS;
 }
@@ -201,9 +205,13 @@ void help () {
 }
 
 //TODO: finish this up
-void closeAndExit () {
+void freeGlobalMemory () {
   free(RGB_PIXEL_MAP);
   free(RGBA_PIXEL_MAP);
+}
+
+void closeAndExit () {
+  freeGlobalMemory();
   //fclose(INPUT_FILE_DATA->fh_in);
   exit(-1);
 }
@@ -362,7 +370,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
 	if(got_tupltype) {message("Error","More than one TUPLTYPE token!");}
 	message("Info","Processing TUPLTYPE token");
 	input->tupltype = getWord(input);
-	if((strcmp(input->tupltype,"RGB")) != 0) {message("Error","Unsupported TUPLTYPE!");}
+	//	if((strcmp(input->tupltype,"RGB")) != 0 && (strcmp(input->tupltype,"RGB_ALPHA")) != 0) {message("Error","Unsupported TUPLTYPE!");}
 	skipWhitespace(input);
 	got_tupltype = 1;
       } else {
@@ -384,7 +392,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
   // need a case statement to deal with 3/6/7 formats separately
   message("Info","Process image information...");
   RGB_PIXEL_MAP  = malloc(sizeof(RGBPixel)  * input->width * input->height );
-  //  RGBA_PIXEL_MAP = malloc(sizeof(RGBAPixel) * input->width * input->height );
+  RGBA_PIXEL_MAP = malloc(sizeof(RGBAPixel) * input->width * input->height );
   int number_count = 0;
   int rgb_index = 0;
   int pm_index = 0;
@@ -418,7 +426,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
     printf("read %d numbers\n",number_count);
     message("Info","Done reading PPM 3");
     //reportPixelMap(RGB_PIXEL_MAP);
-    break;
+    break; // magic number case(3)
   case(6):
     message("Info","  format version: 6");
     while(number_count < total_pixels) {
@@ -446,35 +454,70 @@ int readPPM (char *infile, PPM_file_struct *input) {
       number_count++;
     }
     printf("Info: read %d bytes\n",number_count);
-    break;
+    break; // magic number case(6)
   case(7):
     message("Info","  format version: 7");
-    while(number_count < total_pixels) {
-      //      int value[4];
-      unsigned char value;
-      rgb_index = number_count % 3;
-      // TODO: fread error checking (don't exceed max val and don't hit EOF)
-      //      if (!fread(&value,sizeof(RGBPixel)/3,1,input->fh_in)) {message("Error","Binary data read error");}
-      if (!fread(&value,sizeof(unsigned char),1,input->fh_in)) {message("Error","Binary data read error");}
-      switch(rgb_index) {
-      case(0):
-	RGB_PIXEL_MAP[pm_index].r = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP red\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].r);
-	break;
-      case(1):
-	RGB_PIXEL_MAP[pm_index].g = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP green\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].g);
-	break;
-      case(2):
-	RGB_PIXEL_MAP[pm_index].b = value;
-	if(VERBOSE) printf("  stored[%d](%d) %d to RGB_PIXEL_MAP blue\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].b);
-	pm_index++;
-	break;
+    unsigned char value;
+    // TODO: fread error checking (don't exceed max val and don't hit EOF)
+    //      if (!fread(&value,sizeof(RGBPixel)/3,1,input->fh_in)) {message("Error","Binary data read error");}
+    if (strcmp(input->tupltype,"RGB") == 0) {
+      message("Info","  reading RGB information only, no alpha channel...");
+      while(number_count < total_pixels) {
+	if (!fread(&value,sizeof(unsigned char),1,input->fh_in)) {message("Error","Binary data read error");}
+	rgb_index = number_count % 3;
+	switch(rgb_index) {
+	case(0):
+	  RGB_PIXEL_MAP[pm_index].r = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map red\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].r);
+	  break;
+	case(1):
+	  RGB_PIXEL_MAP[pm_index].g = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map green\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].g);
+	  break;
+	case(2):
+	  RGB_PIXEL_MAP[pm_index].b = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map blue\n",pm_index,rgb_index,RGB_PIXEL_MAP[pm_index].b);
+	  pm_index++;
+	  break;
+	}
+	number_count++;
       }
-      number_count++;
+    } else if (strcmp(input->tupltype,"RGB_ALPHA") == 0) {
+      message("Info","  reading RGB and ALPHA information...");
+      total_pixels = (input->width) * (input->height) * 4;
+      while(number_count < total_pixels) {
+	if (!fread(&value,sizeof(unsigned char),1,input->fh_in)) {message("Error","Binary data read error");}
+	rgb_index = number_count % 4;
+	//	printf("DBG after read: rgb_index: %d number_count: %d\n",rgb_index,number_count);
+	switch(rgb_index) {
+	case(0):
+	  RGB_PIXEL_MAP[pm_index].r = value;
+	  RGBA_PIXEL_MAP[pm_index].r = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map red\n",pm_index,rgb_index,RGBA_PIXEL_MAP[pm_index].r);
+	  break;
+	case(1):
+	  RGB_PIXEL_MAP[pm_index].g = value;
+	  RGBA_PIXEL_MAP[pm_index].g = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map green\n",pm_index,rgb_index,RGBA_PIXEL_MAP[pm_index].g);
+	  break;
+	case(2):
+	  RGB_PIXEL_MAP[pm_index].b = value;
+	  RGBA_PIXEL_MAP[pm_index].b = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map blue\n",pm_index,rgb_index,RGBA_PIXEL_MAP[pm_index].b);
+	  break;
+	case(3):
+	  RGBA_PIXEL_MAP[pm_index].a = value;
+	  if(VERBOSE) printf(" stored[%d](%d) %d to pixel_map alpha\n",pm_index,rgb_index,RGBA_PIXEL_MAP[pm_index].a);
+	  pm_index++;
+	  break;
+	}
+	number_count++;
+      }
+    } else {
+      message("Error","Detected invalid TUPLTYPE");
     }
     printf("Info: read %d bytes\n",number_count);
-    break;
+    break; // magic number case(7)
   }
   
   // ------------------------------- END IMAGE ------------------------------
@@ -494,12 +537,12 @@ int computeDepth() {
   }
 }
 char* computeTuplType() {
-    // TODO: need correct logic here
-  if (INPUT_FILE_DATA.tupltype != "RBG_ALPHA") {
-    // TODO: need correct logic here
-    return "RGB"; 
-  } else {
+  if ((strcmp(INPUT_FILE_DATA.tupltype,"RGB_ALPHA")) == 0) {
+    if (VERBOSE) printf("cD: returning tupltype RGB_ALPHA because input was %s\n",INPUT_FILE_DATA.tupltype);
     return "RGB_ALPHA"; 
+  } else {
+    if (VERBOSE) printf("cD: returning tupltype RGB because input was %s\n",INPUT_FILE_DATA.tupltype);
+    return "RGB"; 
   }
 }
 
@@ -522,8 +565,7 @@ void convertFormatAndWritePPMHeader (FILE* fh) {
     fprintf(fh,"%d\n",          OUTPUT_FILE_DATA.alpha);
   } else if (magic_number == 7) {
     OUTPUT_FILE_DATA.depth      = computeDepth();
-    //OUTPUT_FILE_DATA.tupltype   = computeTuplType();
-    OUTPUT_FILE_DATA.tupltype   = "RGB";
+    OUTPUT_FILE_DATA.tupltype   = computeTuplType();
     
     fprintf(fh,"WIDTH %d\n",    OUTPUT_FILE_DATA.width);
     fprintf(fh,"HEIGHT %d\n",   OUTPUT_FILE_DATA.height);
@@ -572,7 +614,13 @@ void writePPM (char *outfile, PPM_file_struct *input) {
   // P7 format
   case(7):
     message("Info","Outputting format 7");
-    fwrite(RGB_PIXEL_MAP, sizeof(RGBPixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
+    if (strcmp(OUTPUT_FILE_DATA.tupltype,"RGB_ALPHA") == 0) {
+      message("Info","   output file will have alpha data");
+      fwrite(RGBA_PIXEL_MAP, sizeof(RGBAPixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
+    } else {
+      message("Info","   output file is RGB only");
+      fwrite(RGB_PIXEL_MAP, sizeof(RGBPixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
+    }
     break;
   default:
     message("Error","Unrecognized output format");
@@ -593,7 +641,6 @@ void reportPPMStruct (PPM_file_struct *input) {
   if (input->magic_number == 7) {
   printf("     max_value:    %d\n",input->alpha);
   printf("     depth:        %d\n",input->depth);
-  // TODO fix this
   printf("     tupltype:     %s\n",input->tupltype);
   } else {
     printf("     alpha:        %d\n",input->alpha);
@@ -648,6 +695,7 @@ char* getWord (PPM_file_struct *input) {
   int index = 0;
   int max_chars = 32; // large enough to deal with TUPLTYPE tokens
   //  char tmp[max_chars];
+  //TODO: need to free this
   char *tmp = malloc(sizeof(char)*max_chars);
   //static char tmp[64]; <- works, but seems to be corruption, DEPTHT
   //char tmp[64]; <- core dumps

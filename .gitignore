@@ -57,6 +57,7 @@ pixmap*.c
 p7test.ppm
 arraytest.c
 *_test.ppm
+*alpha.ppm
 *.data
 *checker*
 *.log

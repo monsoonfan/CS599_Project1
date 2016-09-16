@@ -81,6 +81,8 @@ make test_checker_all:
 	./ppmrw 6 p7checker_noalpha.ppm p6out7_test.ppm
 	./ppmrw 7 p7checker_noalpha.ppm p7out7_test.ppm
 
+	./ppmrw 7 p7checker_alpha.ppm p7outalpha7_test.ppm
+
 
 run_it.%:
 	gcc $*.c -o $*
