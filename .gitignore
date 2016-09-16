@@ -54,13 +54,14 @@ testio.c
 ppmrw_readv1.c
 scribble.xcf
 pixmap*.c
-p7test.ppm
 arraytest.c
 *_test.ppm
 *alpha.ppm
+*alpha_test.ppm
 *.data
 *checker*
 *.log
 
 teststring.c
 *.jpg
+test.ppm

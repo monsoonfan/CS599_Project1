@@ -10,16 +10,14 @@ Objectives of the for ppmrw.c:
 ----------------------------------------
 1) read PPM images format P3, P6, P7 into memory
 2) write PPM images format P3, P6, P7 from memory
-3) check for the following errors and return non-zero on error
-   - non-existent file
-   - file not correct format (PPM)
+3) check for errors and return non-zero on error
 
 Organization:
 ------------
-- This code is organized into functions, with an eye to the future in hopes to use these functions later
-- Would have included these functions in the form of a myLib.h, but my understanding is the assignment forbids such libraries
+- naming convention: 
+  functions: camelCase
+  variables: "_" based naming
 - The use of global variables will be employed to ease implementation
-- functions have camelCase naming convention, variables have "_" based naming
 
 Workflow:
 --------
@@ -27,41 +25,12 @@ Workflow:
 2) perform error checking on input file
 3) read input file into memory
 4) write output file
-5) perform error checking on output file
-   - 8 bits per channel
 6) report statistics
 
-Functions:
-----------
-  readPPM      - read the PPM file (including checking that its a valid PPM)
-  writePPM     - write the PPM file
-  checkInput   - check the input PPM file for any known errors
-  checkOutput  - check the output file to make sure it was written (including 8-bits per channel/RGBA)
-  message      - print a message to stdout (can be Info, Warn, Error)
-  help         - print help message, usage, etc...
-
-Questions:
-1) follow-up on string/getWord strategy, malloc worked, but how to free?
-3) GIMP can't read my P7's but emacs will
-4) tricks for dealing with binary so I can see what my P6 conversions are not correct?
-
-* remember to use pointer arithmetic to traverse?? not needed
-
-// need to throw error about multibit, it's just if maxval > 256
-
-could do:
-int c = fgetc(fh)
-unsigned char ch = (unsigned char)c;
-
-Can do either goto error handler or eliminate the goto by doing a macro
-
-close files when exit on error, and free the buffer
-
-Remember that we can manually set alpha channel to full intention as we read P3/P6, so should be using RGBA pixel all the time?
-
-
 Issues:
-// fgets(buffer,BUFFSIZE,exif); <-- could be useful, although with varying sizes of info don't see how
+-------
+1) Wanted to get message function to handle multiple arguments, but didnt implement it yet, so
+   there are some printf's in the code
 ---------------------------------------------------------------------------------------
 */
 
@@ -91,9 +60,8 @@ typedef struct PPM_file_struct {
   int height;
   int alpha;
   int depth;
-  //  char *tupltype;
   char *tupltype;
-  //RGBPixel *pixel_map; // this is a problem, would need to dynamically malloc this thing to be efficient
+  //RGBPixel *pixel_map; // didn't get around to nesting pixel_maps into the file_struct
   FILE* fh_in;
 } PPM_file_struct ;
 
@@ -111,22 +79,23 @@ PPM_file_struct     OUTPUT_FILE_DATA;
 
 
 // functions
-int  readPPM         (char *infile,          PPM_file_struct *input);
-void writePPM        (char *outfile,         PPM_file_struct *input);
-void message         (char message_code[],   char message[]        );
-
-void reportPPMStruct (PPM_file_struct *input);
-void reportPixelMap  (RGBPixel *pm             );
-int  getNumber       (int max_value,         PPM_file_struct *input);
+int   readPPM         (char *infile,          PPM_file_struct *input);
+void  writePPM        (char *outfile,         PPM_file_struct *input);
+void  message         (char message_code[],   char message[]        );
+int   getNumber       (int max_value,         PPM_file_struct *input);
 char* getWord         (PPM_file_struct *input);
-void skipWhitespace  (PPM_file_struct *input);
-void skipLine        (PPM_file_struct *input);
-void help            ();
-void convertFormatAndWritePPMHeader  (FILE* fh              );
-int computeDepth();
+void  reportPPMStruct (PPM_file_struct *input);
+void  reportPixelMap  (RGBPixel *pm          );
+void  skipWhitespace  (PPM_file_struct *input);
+void  skipLine        (PPM_file_struct *input);
+void  writePPMHeader  (FILE* fh              );
+
+void  help            ();
+int   computeDepth();
 char* computeTuplType();
-void freeGlobalMemory ();
-void closeAndExit ();
+void  freeGlobalMemory ();
+void  closeAndExit ();
+
 /*
  ------------------------------------------------------------------
                                  MAIN
@@ -141,22 +110,24 @@ int main(int argc, char *argv[]) {
     return(1);
   }
   
-  // Get parameters from arguments
+  // Get parameters from arguments with error checking
   OUTPUT_MAGIC_NUMBER = atoi(argv[1]);
+  if (OUTPUT_MAGIC_NUMBER != 3 && OUTPUT_MAGIC_NUMBER != 6 && OUTPUT_MAGIC_NUMBER != 7) {
+    printf("Error: File type not supported!\n");
+    return EXIT_FAILURE;
+  }
   char *infile = argv[2];
   char *outfile = argv[3];
-  if (infile == outfile) {message("Error","input and output file names the same!"); return EXIT_FAILURE;}
-  printf("Converting file to format %d ...\n",OUTPUT_MAGIC_NUMBER);
-  printf("    Input : %s\n",infile);
-  printf("    Output: %s\n",outfile);
+  if (strcmp(infile,outfile)  == 0) {printf("Error: input and output file names the same!\n"); return EXIT_FAILURE;}
+  printf("Info: Converting file to format %d ...\n",OUTPUT_MAGIC_NUMBER);
+  printf("          Input : %s\n",infile);
+  printf("          Output: %s\n",outfile);
   
   // Open the input file and traverse it, storing the image to buffer
   readPPM(infile,&INPUT_FILE_DATA);
   
   // Write the contents of the new file in desired format
   writePPM(outfile,&INPUT_FILE_DATA);
-
-  // Verify correct output
 
   // free all globally allocated memory
   freeGlobalMemory();
@@ -191,25 +162,44 @@ int main(int argc, char *argv[]) {
 void message (char message_code[], char message[]) {
   if(message_code == "Error") {
     fprintf(stderr,"%s: %s\n",message_code,message);
+    closeAndExit();
     exit(-1);
   } else {
     printf("%s: %s\n",message_code,message);
   }
-  //fprintf(stdout,"%s: %s\n",message_code,message);
-  //  fprintf(channel,"%s: %s\n",message_code,message);
 }
 
+/*
+  --- help ---
+  - rmr5
+  ---------------
+  print usage to user when arguments invalid
+*/
 void help () {
   message("Error","Invalid arguments!");
   message("Usage","ppmrw 3 input.ppm output.ppm");
 }
 
-//TODO: finish this up
+/*
+  --- freeGlobalMemory ---
+  - 9/15/16
+  - rmr5
+  ---------------
+  free up any globally malloc memory
+*/
 void freeGlobalMemory () {
   free(RGB_PIXEL_MAP);
   free(RGBA_PIXEL_MAP);
 }
 
+/*
+  --- closeAndExit ---
+  - 9/15/16
+  - rmr5
+  ---------------
+  prepare to gracefully exit the program by freeing memory and closing any open filehandles
+  TODO: need to finish
+*/
 void closeAndExit () {
   freeGlobalMemory();
   //fclose(INPUT_FILE_DATA->fh_in);
@@ -239,18 +229,18 @@ void closeAndExit () {
      Each sample is represented in pure binary by either 1 or 2 bytes. If the Maxval is less than 256, it
      is 1 byte. Otherwise, it is 2 bytes. The most significant byte is first.
 
-P7 = header is more free-form and has an end-of-header directive
-custom tuple types, but we just need to be able to do RGB and RBGA, anything else, just 
-return Error unsupported type
-we can assume just one byte for this project, but throw an error if it's more than one
-but you better check for anything that could go wrong, each line of code, throw an error to stderr
+     P7 = header is more free-form and has an end-of-header directive
+     custom tuple types, but we just need to be able to do RGB and RBGA, anything else, just 
+     return Error unsupported type
+     we can assume just one byte for this project, but throw an error if it's more than one
+     but you better check for anything that could go wrong, each line of code, throw an error to stderr
 
-fread error checking (don't exceed max val and don't hit EOF)
+     fread error checking (don't exceed max val and don't hit EOF)
   ----------------
 */
 int readPPM (char *infile, PPM_file_struct *input) {
   // opening message
-  printf("Scanning %s for info ...\n",infile);
+  printf("Info: Scanning %s for info ...\n",infile);
   input->fh_in = fopen(infile,"r");
 
   // variables for this func with some initial settings
@@ -309,7 +299,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
       
       break;
     }
-    // P7 case
+    // P7 header case
   } else {
     // P7 headers have tokens to process
     int got_width    = 0;
@@ -370,7 +360,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
 	if(got_tupltype) {message("Error","More than one TUPLTYPE token!");}
 	message("Info","Processing TUPLTYPE token");
 	input->tupltype = getWord(input);
-	//	if((strcmp(input->tupltype,"RGB")) != 0 && (strcmp(input->tupltype,"RGB_ALPHA")) != 0) {message("Error","Unsupported TUPLTYPE!");}
+	if((strcmp(input->tupltype,"RGB")) != 0 && (strcmp(input->tupltype,"RGB_ALPHA")) != 0) {message("Error","Unsupported TUPLTYPE!");}
 	skipWhitespace(input);
 	got_tupltype = 1;
       } else {
@@ -529,6 +519,7 @@ int readPPM (char *infile, PPM_file_struct *input) {
   return input->magic_number;
 }
 
+//  small helper to assign proper depth to a P7 file
 int computeDepth() {
   if ((strcmp(INPUT_FILE_DATA.tupltype,"RGB_ALPHA")) == 0) {
     return 4; 
@@ -536,6 +527,8 @@ int computeDepth() {
     return 3;
   }
 }
+
+// helper to assign preper tupltype in P7
 char* computeTuplType() {
   if ((strcmp(INPUT_FILE_DATA.tupltype,"RGB_ALPHA")) == 0) {
     if (VERBOSE) printf("cD: returning tupltype RGB_ALPHA because input was %s\n",INPUT_FILE_DATA.tupltype);
@@ -546,15 +539,16 @@ char* computeTuplType() {
   }
 }
 
-// convert from input format to output format and write the header
-void convertFormatAndWritePPMHeader (FILE* fh) {
+// helper function to write the header to a file handle
+void writePPMHeader (FILE* fh) {
   int magic_number = OUTPUT_MAGIC_NUMBER;
 
   // These values/header elements are the same regardless format
-  printf("Converting to format %d ...\n",magic_number);
+  printf("Info: Converting to format %d ...\n",magic_number);
   fprintf(fh,"P%d\n",magic_number);
   fprintf(fh,"# PPM file format %d\n",magic_number);
   fprintf(fh,"# written by ppmrw(rmr5)\n");
+  // make some variable assignments from input -> output
   OUTPUT_FILE_DATA.magic_number = magic_number;
   OUTPUT_FILE_DATA.width        = INPUT_FILE_DATA.width;
   OUTPUT_FILE_DATA.height       = INPUT_FILE_DATA.height;
@@ -576,23 +570,34 @@ void convertFormatAndWritePPMHeader (FILE* fh) {
   } else {
     message("Error","Trying to output unsupported format!\n");
   }
-  message("Info","Done with conversion");
+  message("Info","Done writing header");
 }
 
-// write the output file in the new format
+/*
+  --- writePPM ---
+  - 9/13/16
+  - rmr5
+  ---------------
+  Major function to write the actual output ppm file
+  takes a output filename and an input PPM struct
+  uses global data
+
+  This function has case statements to support all supported formats 
+*/
 void writePPM (char *outfile, PPM_file_struct *input) {
-  printf("Writing file %s...\n",outfile);
+  printf("Info: Writing file %s...\n",outfile);
   FILE* fh_out = fopen(outfile,"wb");
 
   // -------------------------- write header ---------------------------------
-  convertFormatAndWritePPMHeader(fh_out);
+  writePPMHeader(fh_out);
   // ---------------------- done write header --------------------------------
 
   // -------------------------- write image ----------------------------------
   int pixel_index = 0;
   int modulo;
   switch(OUTPUT_FILE_DATA.magic_number) {
-  // P3 format
+    // P3 format
+    // Iterate over each pixel in the pixel map and write them byte by byte
   case(3):
     message("Info","Outputting format 3");
     while(pixel_index < (OUTPUT_FILE_DATA.width) * (OUTPUT_FILE_DATA.height)) {      
@@ -606,13 +611,15 @@ void writePPM (char *outfile, PPM_file_struct *input) {
       pixel_index++;
     }
     break;
-  // P6 format
+    // P6 format
+    // write the entire pixel_map in one command
   case(6):
     message("Info","Outputting format 6");
     fwrite(RGB_PIXEL_MAP, sizeof(RGBPixel), OUTPUT_FILE_DATA.width * OUTPUT_FILE_DATA.height, fh_out);
     break;
-  // P7 format
+    // P7 format
   case(7):
+    // write the entire pixel_map in one command, RGB writes from RGB pixel_map and RGBA writes from RGBA pixel_map
     message("Info","Outputting format 7");
     if (strcmp(OUTPUT_FILE_DATA.tupltype,"RGB_ALPHA") == 0) {
       message("Info","   output file will have alpha data");
@@ -647,6 +654,7 @@ void reportPPMStruct (PPM_file_struct *input) {
   }
 }
 
+// small utility function to print the contents of a pixelMap
 void reportPixelMap (RGBPixel *pm) {
   int index = 0;
   int fail_safe = 0;
@@ -659,8 +667,6 @@ void reportPixelMap (RGBPixel *pm) {
 
 // meant to be used with skipWhitespace function that basically skips whitespace
 int getNumber (int max_value, PPM_file_struct *input) {
-  // if you do a getNumber from current, that's different from getNumber so manage it
-  // Yes, always pass in a current character, and return the new current character (which is prev char)
   int tc_index = 0;
   int max_chars = 16;
   char tmp[max_chars];
@@ -685,22 +691,23 @@ int getNumber (int max_value, PPM_file_struct *input) {
 
   // error checking
   if(value > max_value || value < 0) {
-    message("Error","Unsupported byte sizes in image data, 0 to 256 is supported");
+    //    message("Error","Unsupported byte sizes in image data, 0 to 256 is supported");
+    message("Error","Value out of range, possible causes:\n Only 1 byte per channel is supported, does your image have 2 bytes per channel?\n Maximum depth value is 4\n Maximum height/width are 8224 pixels\n Only 255 bit color is supported");
   }
   return value;
 }
 
+// helper function to get a string of chars before next whitespace and return them
 // TODO: need to work out the "maxval" error check here like getNumber
 char* getWord (PPM_file_struct *input) {
   int index = 0;
   int max_chars = 32; // large enough to deal with TUPLTYPE tokens
-  //  char tmp[max_chars];
   //TODO: need to free this
+  //  char tmp[max_chars];
   char *tmp = malloc(sizeof(char)*max_chars);
   //static char tmp[64]; <- works, but seems to be corruption, DEPTHT
   //char tmp[64]; <- core dumps
   //char *tmp;
-  //tmp[index] = CURRENT_CHAR;
   
   while(CURRENT_CHAR != ' ' && CURRENT_CHAR != '\n' && CURRENT_CHAR != EOF) {
     if (VERBOSE) printf("gW: CURRENT_CHAR (%d):%c\n",index,CURRENT_CHAR);
@@ -712,7 +719,6 @@ char* getWord (PPM_file_struct *input) {
       message("Error","File format error, more chars than expected without whitespace");
     }
   } 
-  //CURRENT_CHAR = fgetc(input->fh_in); // this was the cause of P7 read data corruption
 
   // finish up and return converted value
   tmp[++index] = 0; // NULL terminator
@@ -723,6 +729,7 @@ char* getWord (PPM_file_struct *input) {
 
 }
 
+// helper to advance the file handle to next non-whitespace char
 void skipWhitespace (PPM_file_struct *input) {
   if (VERBOSE) printf("sS: skipping space...\n");
   while(CURRENT_CHAR == ' ' || CURRENT_CHAR == '\n') {
@@ -731,6 +738,7 @@ void skipWhitespace (PPM_file_struct *input) {
   PREV_CHAR = CURRENT_CHAR;
 }
 
+// helper function to skip the rest of the current line
 void skipLine (PPM_file_struct *input) {
   if (VERBOSE) printf("sL: skipping line...\n");
   while(CURRENT_CHAR != '\n') {
