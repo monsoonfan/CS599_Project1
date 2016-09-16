@@ -59,8 +59,8 @@ arraytest.c
 *alpha.ppm
 *alpha_test.ppm
 *.data
-*checker*
 *.log
+*checker*
 
 teststring.c
 *.jpg

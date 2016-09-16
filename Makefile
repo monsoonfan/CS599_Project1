@@ -40,9 +40,9 @@ test_my_image:
 #   writes all 3 formats from the resultant P3 and P6 formats (these P7 images built from P3/6 will not have alpha)
 test_alpha:
 	gcc ppmrw.c -o ppmrw
-	./ppmrw 3 p7checker_alpha.ppm p3out_from_P7alpha_test.ppm
-	./ppmrw 6 p7checker_alpha.ppm p6out_from_P7alpha_test.ppm
-	./ppmrw 7 p7checker_alpha.ppm p7out_from_P7alpha_test.ppm
+	./ppmrw 3 p7_with_alpha_channel.ppm p3out_from_P7alpha_test.ppm
+	./ppmrw 6 p7_with_alpha_channel.ppm p6out_from_P7alpha_test.ppm
+	./ppmrw 7 p7_with_alpha_channel.ppm p7out_from_P7alpha_test.ppm
 
 	./ppmrw 3 p3out_from_P7alpha_test.ppm p3out_from_P3alpha_test.ppm
 	./ppmrw 6 p3out_from_P7alpha_test.ppm p6out_from_P3alpha_test.ppm
